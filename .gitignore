@@ -1,5 +1,6 @@
-/libgd
+/O
 *.[oa]
 *.sw[a-z]
 /gpx2tiles
-/O
+/libgd
+/tiles

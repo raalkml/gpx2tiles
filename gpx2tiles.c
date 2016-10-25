@@ -4,6 +4,8 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <getopt.h>
 #include <gd.h>
 #include "gpx.h"
@@ -12,6 +14,9 @@
 
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define ASCII (char *)
+
+static int zoom_min = 1, zoom_max = 17;
+
 
 struct xy
 {
@@ -32,6 +37,7 @@ static inline void draw()
 	img = gdImageCreateTrueColor(256, 256);
 	gdImageColorTransparent(img, transparent);
 	gdImageFilledRectangle(img, 0, 0, 256, 256, transparent);
+	gdImageSetAntiAliased(img, gdTrueColorAlpha(0, 255, 0, 0));
 
 	fp = fopen("tiles/empty.png", "wb");
 	gdImagePngEx(img, fp, 4);
@@ -42,7 +48,6 @@ static inline void draw()
 		{100, 100},
 		{1000, -100},
 	};
-	gdImageSetAntiAliased(img, gdTrueColorAlpha(0, 255, 0, 0));
 	gdImageOpenPolygon(img, poly, countof(poly), gdAntiAliased);
 
 	fp = fopen("tiles/filled.png", "wb");
@@ -125,17 +130,18 @@ struct gpx_file
 	struct gpx_data *gpx;
 };
 
-static int zoom_min = 1, zoom_max = 29;
-
 struct tile {
 	struct tile *next;
 	struct xy xy;
+	struct gpx_latlon loc;
 	int points;
+	gdImage *img;
 };
 
-#define ZOOM_TILE_HASH_SIZE (256)
+#define ZOOM_TILE_HASH_SIZE (256u)
 struct zoom_level {
 	struct tile *tiles[ZOOM_TILE_HASH_SIZE];
+	double xunit, yunit;
 	int tile_cnt;
 };
 
@@ -157,20 +163,34 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 	return tile;
 }
 
-static struct tile *create_tile(const struct xy *xy, int zoom)
+static struct tile *create_tile(const struct xy *xy, int z)
 {
 	struct tile *tile = NULL;
 
-	if (zoom_min <= zoom && zoom <= zoom_max) {
+	if (zoom_min <= z && z <= zoom_max) {
 		unsigned h = hash_xy(xy);
+		int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
+	
 		tile = malloc(sizeof(*tile));
 		tile->xy = *xy;
+		tile->loc.lat = tiley2lat(xy->y, z);
+		tile->loc.lon = tilex2long(xy->x, z);
 		tile->points = 0;
-		tile->next = zoom_levels[zoom].tiles[h];
-		zoom_levels[zoom].tiles[h] = tile;
-		zoom_levels[zoom].tile_cnt++;
+		tile->img = gdImageCreateTrueColor(256, 256);;
+		gdImageColorTransparent(tile->img, transparent);
+		gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
+		gdImageSetAntiAliased(tile->img, gdTrueColorAlpha(0, 255, 0, 0));
+
+		tile->next = zoom_levels[z].tiles[h];
+		zoom_levels[z].tiles[h] = tile;
+		zoom_levels[z].tile_cnt++;
 	}
 	return tile;
+}
+static void destroy_tile(struct tile *tile)
+{
+	gdImageDestroy(tile->img);
+	free(tile);
 }
 
 static struct tile *get_tile(const struct xy *xy, int z)
@@ -184,14 +204,38 @@ static struct tile *get_tile(const struct xy *xy, int z)
 
 static void prepare_zoom_levels()
 {
+	int z;
+
 	free(zoom_levels);
 	zoom_levels = calloc(sizeof(*zoom_levels), zoom_max + 1);
+	for (z = zoom_min; z <= zoom_max; ++z) {
+		zoom_levels[z].xunit = 360.0 / pow(2.0, z);
+		zoom_levels[z].yunit = 1.0 / pow(2.0, z);
+	}
+}
+static void free_zoom_level(int z)
+{
+	struct zoom_level *zl = zoom_levels + z;
+	unsigned int h;
+
+	zl->tile_cnt = 0;
+	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
+		struct tile *tile = zl->tiles[h];
+
+		zl->tiles[h] = NULL;
+		while (tile) {
+			struct tile *next = tile->next;
+			destroy_tile(tile);
+			tile = next;
+		}
+	}
 }
 
 static void find_tiles(struct gpx_file *f, int z)
 {
 	int s = -1, w = -1, n = -1, e = -1;
 
+	printf("\n");
 	for (; f; f = f->next) {
 		struct gpx_point *pt, *ppt;
 		for (pt = ppt = f->gpx->points; pt; ppt = pt, pt = pt->next) {
@@ -210,12 +254,46 @@ static void find_tiles(struct gpx_file *f, int z)
 				n = xy.y;
 			if (xy.y > s || s == -1)
 				s = xy.y;
+
+			xy.x = (int)floor((pt->loc.lon - tile->loc.lon) / zoom_levels[z].xunit);
+			xy.y = (int)floor((pt->loc.lat - tile->loc.lat) / zoom_levels[z].yunit);
+			printf("pt %s : %d %d\n", pt->time, xy.x, xy.y);
+			gdImageSetPixel(tile->img, xy.x, xy.y, gdTrueColor(0,0,127));
 		}
 	}
 	printf("Bounds: north %d east %d south %d west %d (%dx%d)\n",
 	       n, e, s, w, e - w + 1, s - n + 1);
 }
 
+static inline void save_zoom_level(int z)
+{
+	int len = 0, h;
+	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
+		struct tile *tile;
+		for (tile = zoom_levels[z].tiles[h]; tile; tile = tile->next) {
+			char path[128];
+			snprintf(path, sizeof(path), "tiles/%d", z);
+			mkdir(path, 0775);
+			snprintf(path, sizeof(path), "tiles/%d/%d", z, tile->xy.x);
+			mkdir(path, 0775);
+			snprintf(path, sizeof(path), "tiles/%d/%d/%d.png", z, tile->xy.x, tile->xy.y);
+			FILE *fp = fopen(path, "wb");
+			if (fp) {
+				gdImagePngEx(tile->img, fp, 4);
+				fclose(fp);
+			}
+			len += printf(" %d/%d (%d)",
+				      tile->xy.x, tile->xy.y,
+				      tile->points);
+			if (len >= 60) {
+				fputc('\n', stdout);
+				len = 0;
+			}
+		}
+	}
+	if (len)
+		fputc('\n', stdout);
+}
 #include "dump.h"
 
 int main(int argc, char *argv[])
@@ -227,10 +305,16 @@ int main(int argc, char *argv[])
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
 	int opt;
 
-	while ((opt = getopt(argc, argv, "z")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:")) != -1)
 		switch (opt)  {
-		case 'z':
+		case '0':
 			stdin_files = 1;
+			break;
+		case 'z':
+			zoom_min = strtol(optarg, NULL, 0);
+			break;
+		case 'Z':
+			zoom_max = strtol(optarg, NULL, 0);
 			break;
 		case '?':
 			fprintf(stderr, "%s [-z] [--] [gpx files...]\n", argv[0]);
@@ -292,8 +376,11 @@ int main(int argc, char *argv[])
 	for (z = zoom_min; z <= zoom_max; ++z) {
 		printf("z %d ", z); fflush(stdout);
 		find_tiles(files, z);
-		printf("(%d tiles)\n", zoom_levels[z].tile_cnt);
+		printf("(%d tiles, dx %f dy %f)\n", zoom_levels[z].tile_cnt,
+		       zoom_levels[z].xunit, zoom_levels[z].yunit);
 		// dump_zoom_level(z);
+		save_zoom_level(z);
+		free_zoom_level(z);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	duration = timespec_sub(end, start);
@@ -306,6 +393,7 @@ int main(int argc, char *argv[])
 		free(gf);
 		gf = next;
 	}
+	free(zoom_levels);
 	return 0;
 }
 
