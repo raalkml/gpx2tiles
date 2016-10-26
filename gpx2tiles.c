@@ -72,57 +72,60 @@ static inline struct xy get_tile_xy(const struct gpx_latlon *loc, int zoom)
 	return tile;
 }
 
-#if NO
+static inline double ProjectMercToLat(double merc_lat)
+{
+    return 180.0 / M_PI * atan(sinh(merc_lat));
+}
 
 struct projection {
 	double s, w, n, e;
 };
 
-static struct projection Project(const struct gpx_latlon *loc, int zoom)
+static struct projection Project(struct xy xy, int z)
 {
-    my ( $X, $Y, $Zoom ) = @_;
-    my $Unit  = 1 / ( 2**$Zoom );
-    my $relY1 = $Y * $Unit;
-    my $relY2 = $relY1 + $Unit;
+    double unit = 1.0 / pow(2.0, z);
+    double relY1 = xy.y * unit;
+    double relY2 = relY1 + unit;
 
 // note: $LimitY = ProjectF(degrees(atan(sinh(pi)))) = log(sinh(pi)+cosh(pi)) = pi
 // note: degrees(atan(sinh(pi))) = 85.051128..
 //my $LimitY = ProjectF(85.0511);
 
-    # so stay simple and more accurate
-    my $LimitY = pi;
-    my $RangeY = 2 * $LimitY;
-    $relY1 = $LimitY - $RangeY * $relY1;
-    $relY2 = $LimitY - $RangeY * $relY2;
-    my $Lat1 = ProjectMercToLat($relY1);
-    my $Lat2 = ProjectMercToLat($relY2);
-    $Unit = 360 / ( 2**$Zoom );
-    my $Long1 = -180 + $X * $Unit;
-    return ( ( $Lat2, $Long1, $Lat1, $Long1 + $Unit ) );    # S,W,N,E
+    // so stay simple and more accurate
+    double limitY = M_PI;
+    double rangeY = 2 * limitY;
+    relY1 = limitY - rangeY * relY1;
+    relY2 = limitY - rangeY * relY2;
+    double lat1 = ProjectMercToLat(relY1);
+    double lat2 = ProjectMercToLat(relY2);
+    unit = 360.0 / pow(2.0, z);
+    double long1 = -180.0 + xy.x * unit;
+    return (struct projection){ .s = lat2, .w = long1, .n = lat1, .e = long1 + unit };
 }
+
 // From gpx2png.pl:
 // determine pixel position for a coordinate relative to the tileimage
 // where it is drawn on
-static struct xy getPixelPosForCoordinates(const struct gpx_latlon *loc, int zoom)
+static struct xy getPixelPosForCoordinates(const struct gpx_latlon *loc,
+					   int z, int minxtile, int minytile)
 {
-	struct xy tile = getTileNumber(loc, zoom);
+	struct xy tile = get_tile_xy(loc, z);
 
-	int xoffset = ( tile.x - $minxtile ) * 256;
-	int yoffset = ( tile.y - $minytile ) * 256;
+	int xoffset = ( tile.x - minxtile ) * 256;
+	int yoffset = ( tile.y - minytile ) * 256;
 
-	my ( $south, $west, $north, $east ) = Project( $xtile, $ytile, $zoom );
+	struct projection proj = Project(tile, z);
 
-	my $x = int( ( $lon - $west ) * 256 /  ( $east - $west ) + $xoffset );
-	my $y = int( ( $lat - $north ) * 256 / ( $south - $north ) + $yoffset );
-
+	int x = (loc->lon - proj.w) * 256 /  (proj.e - proj.w) + 0*xoffset;
+	int y = (loc->lat - proj.n) * 256 / (proj.s - proj.n) + 0*yoffset;
+/*
 	if ( $x > $maxx ) { $maxx = $x; }
 	if ( $x < $minx ) { $minx = $x; }
 	if ( $y > $maxy ) { $maxy = $y; }
 	if ( $y < $miny ) { $miny = $y; }
-
-	return ( $x, $y );
+*/
+	return (struct xy){ x, y };
 }
-#endif
 
 struct gpx_file
 {
@@ -231,12 +234,13 @@ static void free_zoom_level(int z)
 	}
 }
 
-static void find_tiles(struct gpx_file *f, int z)
+static void make_tiles(struct gpx_file *files, int z)
 {
 	int s = -1, w = -1, n = -1, e = -1;
+	struct gpx_file *f;
 
-	printf("\n");
-	for (; f; f = f->next) {
+	//printf("\n");
+	for (f = files; f; f = f->next) {
 		struct gpx_point *pt, *ppt;
 		for (pt = ppt = f->gpx->points; pt; ppt = pt, pt = pt->next) {
 			struct xy xy = get_tile_xy(&pt->loc, z);
@@ -254,15 +258,60 @@ static void find_tiles(struct gpx_file *f, int z)
 				n = xy.y;
 			if (xy.y > s || s == -1)
 				s = xy.y;
-
-			xy.x = (int)floor((pt->loc.lon - tile->loc.lon) / zoom_levels[z].xunit);
-			xy.y = (int)floor((pt->loc.lat - tile->loc.lat) / zoom_levels[z].yunit);
-			printf("pt %s : %d %d\n", pt->time, xy.x, xy.y);
-			gdImageSetPixel(tile->img, xy.x, xy.y, gdTrueColor(0,0,127));
 		}
 	}
-	printf("Bounds: north %d east %d south %d west %d (%dx%d)\n",
-	       n, e, s, w, e - w + 1, s - n + 1);
+	//printf("Bounds: north %d east %d south %d west %d (%dx%d)\n",
+	//       n, e, s, w, e - w + 1, s - n + 1);
+	for (f = files; f; f = f->next) {
+		struct gpx_point *pt, *ppt;
+		int speed = 0;
+
+		for (pt = ppt = f->gpx->points; pt; ppt = pt, pt = pt->next) {
+			struct xy xy = get_tile_xy(&pt->loc, z);
+			struct tile *tile = get_tile(&xy, z);
+
+			if (!tile)
+				continue;
+			//xy.x = (int)floor((pt->loc.lon - tile->loc.lon) / zoom_levels[z].xunit);
+			//xy.y = (int)floor((pt->loc.lat - tile->loc.lat) / zoom_levels[z].yunit);
+			//printf("pt %s : %d %d (%f %f)\n", pt->time,
+			//       xy.x, xy.y,
+			//       pt->loc.lon - tile->loc.lon,
+			//       pt->loc.lat - tile->loc.lat);
+			struct xy pix = getPixelPosForCoordinates(&pt->loc, z, w, n);
+			static const int spdclr[] = {
+				gdTrueColor(0, 0, 0x7f),
+				gdTrueColor(0xcf, 0, 0),
+				gdTrueColor(0xe4, 0xe7, 0),
+				gdTrueColor(0x26, 0xe7, 0),
+				gdTrueColor(0, 0xff, 0x48),
+			};
+			// printf("pt %s : %d %d\n", pt->time, pix.x, pix.y);
+			int spd = speed;
+			if (pt->flags & GPX_PT_SPEED) {
+				if (pt->speed <= 8.0)
+					speed = 1;
+				else if (pt->speed <= 15.0)
+					speed = 2;
+				else if (pt->speed <= 20.0)
+					speed = 3;
+				else if (pt->speed > 20.0)
+					speed = 4;
+			}
+			int clr = gdImageGetPixel(tile->img, pix.x, pix.y);
+			int prev;
+			for (prev= 0; prev < (int)countof(spdclr); ++prev)
+				if (clr == spdclr[prev])
+					break;
+			if (!prev || speed > prev)
+				spd = speed;
+			gdImageSetPixel(tile->img, pix.x, pix.y, spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x+1, pix.y, spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x-1, pix.y, spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x, pix.y-1, spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x, pix.y+1, spdclr[spd]);
+		}
+	}
 }
 
 static inline void save_zoom_level(int z)
@@ -272,16 +321,18 @@ static inline void save_zoom_level(int z)
 		struct tile *tile;
 		for (tile = zoom_levels[z].tiles[h]; tile; tile = tile->next) {
 			char path[128];
-			snprintf(path, sizeof(path), "tiles/%d", z);
+			snprintf(path, sizeof(path), "%d", z);
 			mkdir(path, 0775);
-			snprintf(path, sizeof(path), "tiles/%d/%d", z, tile->xy.x);
+			snprintf(path, sizeof(path), "%d/%d", z, tile->xy.x);
 			mkdir(path, 0775);
-			snprintf(path, sizeof(path), "tiles/%d/%d/%d.png", z, tile->xy.x, tile->xy.y);
+			snprintf(path, sizeof(path), "%d/%d/%d.png", z, tile->xy.x, tile->xy.y);
 			FILE *fp = fopen(path, "wb");
 			if (fp) {
 				gdImagePngEx(tile->img, fp, 4);
 				fclose(fp);
 			}
+			if (!len)
+				len += printf("z %d", z);
 			len += printf(" %d/%d (%d)",
 				      tile->xy.x, tile->xy.y,
 				      tile->points);
@@ -383,7 +434,7 @@ int main(int argc, char *argv[])
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	for (z = zoom_min; z <= zoom_max; ++z) {
 		printf("z %d ", z); fflush(stdout);
-		find_tiles(files, z);
+		make_tiles(files, z);
 		printf("(%d tiles, dx %f dy %f)\n", zoom_levels[z].tile_cnt,
 		       zoom_levels[z].xunit, zoom_levels[z].yunit);
 		// dump_zoom_level(z);
