@@ -290,13 +290,14 @@ static void make_tiles(struct gpx_file *files, int z)
 			// printf("pt %s : %d %d\n", pt->time, pix.x, pix.y);
 			int spd = speed;
 			if (pt->flags & GPX_PT_SPEED) {
-				if (pt->speed <= 8.0)
+				double kph = pt->speed * 3.6;
+				if (kph <= 10.0)
 					speed = 1;
-				else if (pt->speed <= 15.0)
+				else if (kph <= 20.0)
 					speed = 2;
-				else if (pt->speed <= 20.0)
+				else if (kph <= 25.0)
 					speed = 3;
-				else if (pt->speed > 20.0)
+				else if (kph > 30.0)
 					speed = 4;
 			}
 			/*
