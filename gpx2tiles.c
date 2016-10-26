@@ -298,6 +298,7 @@ static inline void save_zoom_level(int z)
 
 int main(int argc, char *argv[])
 {
+	const char *cd_to = NULL;
 	struct timespec start, end, duration;
 	struct gpx_file *gf;
 	struct gpx_file *files = NULL, **files_tail = &files;
@@ -305,10 +306,13 @@ int main(int argc, char *argv[])
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
+			break;
+		case 'C':
+			cd_to = optarg;
 			break;
 		case 'z':
 			zoom_min = strtol(optarg, NULL, 0);
@@ -369,6 +373,10 @@ int main(int argc, char *argv[])
 	       duration.tv_sec, duration.tv_nsec);
 	// dump_points(files);
 
+	if (cd_to && chdir(cd_to) == -1) {
+		perror(cd_to);
+		exit(2);
+	}
 	int z;
 
 	prepare_zoom_levels();
