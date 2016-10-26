@@ -272,19 +272,20 @@ static void make_tiles(struct gpx_file *files, int z)
 
 			if (!tile)
 				continue;
-			//xy.x = (int)floor((pt->loc.lon - tile->loc.lon) / zoom_levels[z].xunit);
-			//xy.y = (int)floor((pt->loc.lat - tile->loc.lat) / zoom_levels[z].yunit);
-			//printf("pt %s : %d %d (%f %f)\n", pt->time,
-			//       xy.x, xy.y,
-			//       pt->loc.lon - tile->loc.lon,
-			//       pt->loc.lat - tile->loc.lat);
 			struct xy pix = getPixelPosForCoordinates(&pt->loc, z, w, n);
+			struct xy ppix = pix;
+			if (ppt != pt) {
+				struct xy pxy = get_tile_xy(&ppt->loc, z);
+				struct tile *ptile = get_tile(&pxy, z);
+				if (tile == ptile)
+					ppix = getPixelPosForCoordinates(&ppt->loc, z, w, n);
+			}
 			static const int spdclr[] = {
-				gdTrueColor(0, 0, 0x7f),
-				gdTrueColor(0xcf, 0, 0),
+				gdTrueColor(   0,    0, 0x7f),
+				gdTrueColor(0xcf,    0, 0),
 				gdTrueColor(0xe4, 0xe7, 0),
 				gdTrueColor(0x26, 0xe7, 0),
-				gdTrueColor(0, 0xff, 0x48),
+				gdTrueColor(   0, 0xff, 0x48),
 			};
 			// printf("pt %s : %d %d\n", pt->time, pix.x, pix.y);
 			int spd = speed;
@@ -298,6 +299,7 @@ static void make_tiles(struct gpx_file *files, int z)
 				else if (pt->speed > 20.0)
 					speed = 4;
 			}
+			/*
 			int clr = gdImageGetPixel(tile->img, pix.x, pix.y);
 			int prev;
 			for (prev= 0; prev < (int)countof(spdclr); ++prev)
@@ -305,11 +307,19 @@ static void make_tiles(struct gpx_file *files, int z)
 					break;
 			if (!prev || speed > prev)
 				spd = speed;
-			gdImageSetPixel(tile->img, pix.x, pix.y, spdclr[spd]);
-			gdImageSetPixel(tile->img, pix.x+1, pix.y, spdclr[spd]);
-			gdImageSetPixel(tile->img, pix.x-1, pix.y, spdclr[spd]);
-			gdImageSetPixel(tile->img, pix.x, pix.y-1, spdclr[spd]);
-			gdImageSetPixel(tile->img, pix.x, pix.y+1, spdclr[spd]);
+			*/
+			spd = speed;
+			if (ppix.x == pix.x && ppix.y == pix.y)
+				gdImageSetPixel(tile->img, pix.x, pix.y, spdclr[spd]);
+			else
+				gdImageLine(tile->img,
+					    ppix.x, ppix.y,
+					    pix.x, pix.y,
+					    spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x+1, pix.y+1, spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x-1, pix.y-1, spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x+1, pix.y-1, spdclr[spd]);
+			gdImageSetPixel(tile->img, pix.x-1, pix.y+1, spdclr[spd]);
 		}
 	}
 }
