@@ -15,7 +15,7 @@
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define ASCII (char *)
 
-static int zoom_min = 1, zoom_max = 17;
+static int zoom_min = 1, zoom_max = 18;
 
 
 struct xy
