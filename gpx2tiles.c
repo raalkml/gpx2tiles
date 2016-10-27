@@ -281,11 +281,11 @@ static void make_tiles(struct gpx_file *files, int z)
 					ppix = getPixelPosForCoordinates(&ppt->loc, z, w, n);
 			}
 			static const int spdclr[] = {
-				gdTrueColor(   0,    0, 0x7f),
-				gdTrueColor(0xcf,    0, 0),
-				gdTrueColor(0xe4, 0xe7, 0),
-				gdTrueColor(0x26, 0xe7, 0),
-				gdTrueColor(   0, 0xff, 0x48),
+				gdTrueColor(0x00, 0x00, 0x7f),
+				gdTrueColor(0xcf, 0x00, 0x00), // darkred
+				gdTrueColor(0xa4, 0x61, 0x00), // brown
+				gdTrueColor(0xf4, 0xfb, 0x39), // yellow
+				gdTrueColor(0x00, 0xff, 0x00), // light green
 			};
 			// printf("pt %s : %d %d\n", pt->time, pix.x, pix.y);
 			int spd = speed;
