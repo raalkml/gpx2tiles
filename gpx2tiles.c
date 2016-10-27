@@ -27,35 +27,6 @@ static inline gdPoint xy2gdPoint(const struct xy xy)
 	return (gdPoint){ .x = xy.x, .y = xy.y };
 }
 
-static inline void draw()
-{
-	//int x, y, dx, dy, i;
-	FILE *fp;
-	gdImage *img;
-	int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
-	
-	img = gdImageCreateTrueColor(256, 256);
-	gdImageColorTransparent(img, transparent);
-	gdImageFilledRectangle(img, 0, 0, 256, 256, transparent);
-	gdImageSetAntiAliased(img, gdTrueColorAlpha(0, 255, 0, 0));
-
-	fp = fopen("tiles/empty.png", "wb");
-	gdImagePngEx(img, fp, 4);
-	fclose(fp);
-
-	gdPoint poly[] = {
-		{-100, -100},
-		{100, 100},
-		{1000, -100},
-	};
-	gdImageOpenPolygon(img, poly, countof(poly), gdAntiAliased);
-
-	fp = fopen("tiles/filled.png", "wb");
-	gdImagePngEx(img, fp, 4);
-	fclose(fp);
-	gdImageDestroy(img);
-}
-
 static inline struct xy get_tile_xy(const struct gpx_latlon *loc, int zoom)
 {
 	struct xy tile;
