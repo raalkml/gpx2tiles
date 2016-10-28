@@ -30,10 +30,11 @@ static inline size_t strlcpy(char* tgt, const char* src, size_t size)
 	*__tail = i; \
 } while(0)
 
-
+/*
 const char GPX_SRC_GPS[] = "gps";
 const char GPX_SRC_SYNTHETIC[] = "synt";
 const char GPX_SRC_UNKNOWN[] = "unk";
+*/
 
 struct gpx_point *new_trk_point(void)
 {
@@ -41,7 +42,7 @@ struct gpx_point *new_trk_point(void)
 
 	pt->next = NULL;
 	pt->flags = 0;
-	pt->src = GPX_SRC_SYNTHETIC;
+	//pt->src = GPX_SRC_SYNTHETIC;
 	pt->loc.lat = pt->loc.lon = 0.0;
 	return pt;
 }
@@ -67,6 +68,7 @@ void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
 			s = xmlNodeGetContent(xpt);
 			strlcpy(pt->time, ASCII s, sizeof(pt->time));
 			goto frees;
+#if 0
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "src") == 0) {
 			s = xmlNodeGetContent(xpt);
 			if (xmlStrcasecmp(s, BAD_CAST GPX_SRC_GPS) == 0)
@@ -74,6 +76,7 @@ void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
 			else
 				pt->src = GPX_SRC_UNKNOWN;
 			goto frees;
+#endif
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "speed") == 0) {
 			pt->flags |= GPX_PT_SPEED;
 			s = xmlNodeGetContent(xpt);
@@ -111,7 +114,7 @@ void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
 	}
 }
 
-static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt, int trk, int seg)
+static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, int nseg*/)
 {
 	int ptcnt = 0;
 	for (; xpt; xpt = xmlNextElementSibling(xpt)) {
@@ -135,8 +138,8 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt, int trk, int 
 			goto fail;
 		pt->flags |= GPX_PT_LATLON;
 		parse_trkpt(xpt, pt);
-		pt->trk = trk;
-		pt->seg = seg;
+		//pt->trk = trk;
+		//pt->seg = nseg;
 		put_trk_point(gpxf, pt);
 		++ptcnt;
 		continue;
@@ -150,7 +153,7 @@ struct gpx_data *gpx_read_file(const char *path)
 {
 	xmlNode *xe;
 	xmlDoc *xml;
-	int ntrk = 0;
+	//int ntrk = 0;
 	struct gpx_data *gpxf = malloc(sizeof(*gpxf));
 
 	gpxf->path = strdup(path);
@@ -171,7 +174,7 @@ struct gpx_data *gpx_read_file(const char *path)
 	for (xe = xmlFirstElementChild(xmlDocGetRootElement(xml)); xe;
 	     xe = xmlNextElementSibling(xe)) {
 		xmlNode *seg;
-		int nseg = 0;
+		//int nseg = 0;
 
 		if (xmlStrcasecmp(xe->name, BAD_CAST "time") == 0) {
 			xmlChar *s = xmlNodeGetContent(xe);
@@ -190,11 +193,10 @@ struct gpx_data *gpx_read_file(const char *path)
 			if (xmlStrcasecmp(seg->name, BAD_CAST "trkseg") != 0)
 				continue;
 			gpxf->points_cnt += process_trk_points(gpxf,
-				xmlFirstElementChild(seg),
-				ntrk, nseg);
-			++nseg;
+				xmlFirstElementChild(seg) /* , ntrk, nseg */);
+			//++nseg;
 		}
-		++ntrk;
+		//++ntrk;
 	}
 	xmlFreeDoc(xml);
 	return gpxf;

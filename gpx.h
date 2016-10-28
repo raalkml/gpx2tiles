@@ -41,11 +41,11 @@ struct gpx_point
 	float hdop, vdop, pdop;
 
 	char time[24];
-	const char *src; // "gps"
+	//const char *src; // "gps"
 	// struct gpx_data *container;
 	// struct gpx_segment *seg;
 	// struct gpx_track *trk;
-	int trk, seg;
+	//int trk, seg;
 };
 
 extern const char GPX_SRC_GPS[];
