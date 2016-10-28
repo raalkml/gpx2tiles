@@ -17,6 +17,8 @@
 
 static int zoom_min = 1, zoom_max = 18;
 
+/* Do not draw lines at zoom levels below Z_NO_LINES */
+#define Z_NO_LINES 7
 
 struct xy
 {
@@ -291,22 +293,31 @@ static void make_tiles(struct gpx_file *files, int z)
 				spd = speed;
 			*/
 			spd = speed;
+			int color = spdclr[spd]; // gdAntiAliased produced really bad results on light maps
+			gdImageSetPixel(tile->img, pix.x, pix.y, color);
+
+			if (z < Z_NO_LINES)
+				continue;
+
+			gdImageSetAntiAliased(tile->img, spdclr[spd]);
+			if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
+				int d = (int)floor(pt->pdop * 3);
+				gdImageEllipse(tile->img, pix.x, pix.y,
+					       d, d, (20 << 24) | color);
+			}
 			if (tile == ptile) {
-				if (ppix.x == pix.x && ppix.y == pix.y)
-					gdImageSetPixel(tile->img, pix.x, pix.y, spdclr[spd]);
-				else
-					gdImageLine(tile->img, ppix.x, ppix.y, pix.x, pix.y, spdclr[spd]);
+				if (!(ppix.x == pix.x && ppix.y == pix.y))
+					gdImageLine(tile->img, ppix.x, ppix.y, pix.x, pix.y, color);
 			} else {
 				int px = pix.x, py = pix.y;
 				int ppx = ppix.x, ppy = ppix.y;
-
+#if 0
 				if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
 					printf("\nz %d %s and %s far apart: dx=%d, dy=%d\n\n",
 					       z, pt->time, ppt->time,
 					       tile->xy.x - ptile->xy.x,
 					       tile->xy.y - ptile->xy.y);
-
-				gdImageSetPixel(tile->img, pix.x, pix.y, spdclr[spd]);
+#endif
 				if (ptile->xy.y == tile->xy.y) {
 					if (ptile->xy.x < tile->xy.x)
 						px = 0, ppx = 256;
@@ -318,8 +329,12 @@ static void make_tiles(struct gpx_file *files, int z)
 					else
 						py = 256, ppy = 0;
 				}
-				gdImageLine(tile->img, px, py, pix.x, pix.y, 0x0000ef);
-				gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, 0x00006f);
+				px = ppix.x - (tile->xy.x - ptile->xy.x) * 256;
+				py = ppix.y - (tile->xy.y - ptile->xy.y) * 256;
+				ppx = pix.x - (-tile->xy.x + ptile->xy.x) * 256;
+				ppy = pix.y - (-tile->xy.y + ptile->xy.y) * 256;
+				gdImageLine(tile->img, px, py, pix.x, pix.y, color /*0xff00ef*/);
+				gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, color /*0x00006f*/);
 			}
 			/*
 			gdImageSetPixel(tile->img, pix.x+1, pix.y+1, spdclr[spd]);
