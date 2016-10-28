@@ -13,7 +13,6 @@
 #include "slippy-map.h"
 
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
-#define ASCII (char *)
 
 static int zoom_min = 1, zoom_max = 18;
 
@@ -48,7 +47,8 @@ static inline double ProjectMercToLat(double merc_lat)
     return 180.0 / M_PI * atan(sinh(merc_lat));
 }
 
-struct projection {
+struct projection
+{
 	double s, w, n, e;
 };
 
@@ -176,7 +176,7 @@ static struct tile *get_tile(const struct xy *xy, int z)
 	return tile;
 }
 
-static void prepare_zoom_levels()
+static void prepare_zoom_levels(void)
 {
 	int z;
 
@@ -258,7 +258,6 @@ static void make_tiles(struct gpx_file *files, int z)
 				gdTrueColor(0xf4, 0xfb, 0x39), // yellow
 				gdTrueColor(0x00, 0xff, 0x00), // light green
 			};
-			// printf("pt %s : %d %d\n", pt->time, pix.x, pix.y);
 			int spd = speed;
 			if (pt->flags & GPX_PT_SPEED) {
 				double kph = pt->speed * 3.6;
@@ -271,7 +270,7 @@ static void make_tiles(struct gpx_file *files, int z)
 				else if (kph > 30.0)
 					speed = 4;
 			}
-			/*
+			/* Don't allow to reduce the speed represented by color:
 			int clr = gdImageGetPixel(tile->img, pix.x, pix.y);
 			int prev;
 			for (prev= 0; prev < (int)countof(spdclr); ++prev)
@@ -327,6 +326,7 @@ static inline void save_zoom_level(int z)
 	if (len)
 		fputc('\n', stdout);
 }
+
 #include "dump.h"
 
 int main(int argc, char *argv[])
@@ -425,7 +425,8 @@ int main(int argc, char *argv[])
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	duration = timespec_sub(end, start);
-	fprintf(stderr, "processed in %ld.%09ld\n", duration.tv_sec, duration.tv_nsec);
+	fprintf(stderr, "z %d-%d processed in %ld.%09ld\n",
+		zoom_min, zoom_max, duration.tv_sec, duration.tv_nsec);
 
 	for (gf = files; gf;) {
 		struct gpx_file *next = gf->next;
