@@ -81,24 +81,14 @@ static struct projection Project(struct xy xy, int z)
 // determine pixel position for a coordinate relative to the tileimage
 // where it is drawn on
 static struct xy getPixelPosForCoordinates(const struct gpx_latlon *loc,
-					   int z, int minxtile, int minytile)
+					   int z)
 {
-	struct xy tile = get_tile_xy(loc, z);
+	struct projection proj = Project(get_tile_xy(loc, z), z);
 
-	int xoffset = ( tile.x - minxtile ) * 256;
-	int yoffset = ( tile.y - minytile ) * 256;
-
-	struct projection proj = Project(tile, z);
-
-	int x = (loc->lon - proj.w) * 256 /  (proj.e - proj.w) + 0*xoffset;
-	int y = (loc->lat - proj.n) * 256 / (proj.s - proj.n) + 0*yoffset;
-/*
-	if ( $x > $maxx ) { $maxx = $x; }
-	if ( $x < $minx ) { $minx = $x; }
-	if ( $y > $maxy ) { $maxy = $y; }
-	if ( $y < $miny ) { $miny = $y; }
-*/
-	return (struct xy){ x, y };
+	return (struct xy){
+		.x = (loc->lon - proj.w) * 256 /  (proj.e - proj.w),
+		.y = (loc->lat - proj.n) * 256 / (proj.s - proj.n),
+	};
 }
 
 struct gpx_file
@@ -208,142 +198,110 @@ static void free_zoom_level(int z)
 	}
 }
 
+static const int spdclr[] = {
+	gdTrueColor(0x00, 0x00, 0x7f),
+	gdTrueColor(0xcf, 0x00, 0x00), // darkred
+	gdTrueColor(0xa4, 0x61, 0x00), // brown
+	gdTrueColor(0xf4, 0xfb, 0x39), // yellow
+	gdTrueColor(0x00, 0x7f, 0x00), // green
+	/*
+	 * Using only blue colors:
+	 *
+	 * gdTrueColor(0x00, 0x00, 0x33),
+	 * gdTrueColor(0x06, 0x1a, 0x5b),
+	 * gdTrueColor(0x10, 0x45, 0x9f),
+	 * gdTrueColor(0x18, 0x69, 0xd8),
+	 * gdTrueColor(0x1e, 0x83, 0xff),
+	 *
+	 */
+};
+static void draw_track(struct gpx_point *points, int z)
+{
+	struct gpx_point *pt, *ppt;
+	int speed = 0;
+
+	for (pt = ppt = points; pt; ppt = pt, pt = pt->next) {
+		struct xy xy = get_tile_xy(&pt->loc, z);
+		struct tile *tile = get_tile(&xy, z);
+
+		if (!tile)
+			continue;
+
+		struct xy pix = getPixelPosForCoordinates(&pt->loc, z);
+		struct xy ppix = pix;
+		struct xy pxy = xy;
+		struct tile *ptile = tile;
+
+		if (ppt != pt) {
+			pxy = get_tile_xy(&ppt->loc, z);
+			ptile = get_tile(&pxy, z);
+			ppix = getPixelPosForCoordinates(&ppt->loc, z);
+		}
+		int spd = speed;
+		if (pt->flags & GPX_PT_SPEED) {
+			double kph = pt->speed * 3.6;
+			if (kph <= 10.0)
+				speed = 1;
+			else if (kph <= 20.0)
+				speed = 2;
+			else if (kph <= 25.0)
+				speed = 3;
+			else if (kph > 30.0)
+				speed = 4;
+		}
+		spd = speed;
+		int color = spdclr[spd]; // gdAntiAliased produced really bad results on light maps
+		gdImageSetPixel(tile->img, pix.x, pix.y, color);
+
+		if (z < Z_NO_LINES)
+			continue;
+
+		gdImageSetAntiAliased(tile->img, spdclr[spd]);
+		if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
+			int d = (int)floor(pt->pdop * 3);
+			gdImageEllipse(tile->img, pix.x, pix.y,
+				       d, d, (20 << 24) | color);
+		}
+		if (tile == ptile) {
+			if (!(ppix.x == pix.x && ppix.y == pix.y))
+				gdImageLine(tile->img, ppix.x, ppix.y, pix.x, pix.y, color);
+		} else {
+			int px = pix.x, py = pix.y;
+			int ppx = ppix.x, ppy = ppix.y;
+#if 0
+			if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
+				printf("\nz %d %s and %s far apart: dx=%d, dy=%d\n\n",
+				       z, pt->time, ppt->time,
+				       tile->xy.x - ptile->xy.x,
+				       tile->xy.y - ptile->xy.y);
+#endif
+			if (ptile->xy.y == tile->xy.y) {
+				if (ptile->xy.x < tile->xy.x)
+					px = 0, ppx = 256;
+				else
+					px = 256, ppx = 0;
+			} else if (ptile->xy.x == tile->xy.x) {
+				if (ptile->xy.y < tile->xy.y)
+					py = 0, ppy = 256;
+				else
+					py = 256, ppy = 0;
+			}
+			px = ppix.x - (tile->xy.x - ptile->xy.x) * 256;
+			py = ppix.y - (tile->xy.y - ptile->xy.y) * 256;
+			ppx = pix.x - (-tile->xy.x + ptile->xy.x) * 256;
+			ppy = pix.y - (-tile->xy.y + ptile->xy.y) * 256;
+			gdImageLine(tile->img, px, py, pix.x, pix.y, color /*0xff00ef*/);
+			gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, color /*0x00006f*/);
+		}
+	}
+}
+
 static void make_tiles(struct gpx_file *files, int z)
 {
-	int s = -1, w = -1, n = -1, e = -1;
 	struct gpx_file *f;
 
-	//printf("\n");
-	for (f = files; f; f = f->next) {
-		struct gpx_point *pt, *ppt;
-		for (pt = ppt = f->gpx->points; pt; ppt = pt, pt = pt->next) {
-			struct xy xy = get_tile_xy(&pt->loc, z);
-			struct tile *tile = get_tile(&xy, z);
-
-			if (!tile)
-				continue;
-			tile->points++;
-
-			if (xy.x < w || w == -1)
-				w = xy.x;
-			if (xy.x > e || e == -1)
-				e = xy.x;
-			if (xy.y < n || n == -1)
-				n = xy.y;
-			if (xy.y > s || s == -1)
-				s = xy.y;
-		}
-	}
-	//printf("Bounds: north %d east %d south %d west %d (%dx%d)\n",
-	//       n, e, s, w, e - w + 1, s - n + 1);
-	for (f = files; f; f = f->next) {
-		struct gpx_point *pt, *ppt;
-		int speed = 0;
-
-		for (pt = ppt = f->gpx->points; pt; ppt = pt, pt = pt->next) {
-			struct xy xy = get_tile_xy(&pt->loc, z);
-			struct tile *tile = get_tile(&xy, z);
-
-			if (!tile)
-				continue;
-
-			struct xy pix = getPixelPosForCoordinates(&pt->loc, z, w, n);
-			struct xy ppix = pix;
-			struct xy pxy = xy;
-			struct tile *ptile = tile;
-
-			if (ppt != pt) {
-				pxy = get_tile_xy(&ppt->loc, z);
-				ptile = get_tile(&pxy, z);
-				ppix = getPixelPosForCoordinates(&ppt->loc, z, w, n);
-			}
-			static const int spdclr[] = {
-				gdTrueColor(0x00, 0x00, 0x7f),
-				gdTrueColor(0xcf, 0x00, 0x00), // darkred
-				gdTrueColor(0xa4, 0x61, 0x00), // brown
-				gdTrueColor(0xf4, 0xfb, 0x39), // yellow
-				gdTrueColor(0x00, 0x7f, 0x00), // green
-			/* Using only blue colors:
-				gdTrueColor(0x00, 0x00, 0x33),
-				gdTrueColor(0x06, 0x1a, 0x5b),
-				gdTrueColor(0x10, 0x45, 0x9f),
-				gdTrueColor(0x18, 0x69, 0xd8),
-				gdTrueColor(0x1e, 0x83, 0xff),
-			*/
-			};
-			int spd = speed;
-			if (pt->flags & GPX_PT_SPEED) {
-				double kph = pt->speed * 3.6;
-				if (kph <= 10.0)
-					speed = 1;
-				else if (kph <= 20.0)
-					speed = 2;
-				else if (kph <= 25.0)
-					speed = 3;
-				else if (kph > 30.0)
-					speed = 4;
-			}
-			/* Don't allow to reduce the speed represented by color:
-			int clr = gdImageGetPixel(tile->img, pix.x, pix.y);
-			int prev;
-			for (prev= 0; prev < (int)countof(spdclr); ++prev)
-				if (clr == spdclr[prev])
-					break;
-			if (!prev || speed > prev)
-				spd = speed;
-			*/
-			spd = speed;
-			int color = spdclr[spd]; // gdAntiAliased produced really bad results on light maps
-			gdImageSetPixel(tile->img, pix.x, pix.y, color);
-
-			if (z < Z_NO_LINES)
-				continue;
-
-			gdImageSetAntiAliased(tile->img, spdclr[spd]);
-			if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
-				int d = (int)floor(pt->pdop * 3);
-				gdImageEllipse(tile->img, pix.x, pix.y,
-					       d, d, (20 << 24) | color);
-			}
-			if (tile == ptile) {
-				if (!(ppix.x == pix.x && ppix.y == pix.y))
-					gdImageLine(tile->img, ppix.x, ppix.y, pix.x, pix.y, color);
-			} else {
-				int px = pix.x, py = pix.y;
-				int ppx = ppix.x, ppy = ppix.y;
-#if 0
-				if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
-					printf("\nz %d %s and %s far apart: dx=%d, dy=%d\n\n",
-					       z, pt->time, ppt->time,
-					       tile->xy.x - ptile->xy.x,
-					       tile->xy.y - ptile->xy.y);
-#endif
-				if (ptile->xy.y == tile->xy.y) {
-					if (ptile->xy.x < tile->xy.x)
-						px = 0, ppx = 256;
-					else
-						px = 256, ppx = 0;
-				} else if (ptile->xy.x == tile->xy.x) {
-					if (ptile->xy.y < tile->xy.y)
-						py = 0, ppy = 256;
-					else
-						py = 256, ppy = 0;
-				}
-				px = ppix.x - (tile->xy.x - ptile->xy.x) * 256;
-				py = ppix.y - (tile->xy.y - ptile->xy.y) * 256;
-				ppx = pix.x - (-tile->xy.x + ptile->xy.x) * 256;
-				ppy = pix.y - (-tile->xy.y + ptile->xy.y) * 256;
-				gdImageLine(tile->img, px, py, pix.x, pix.y, color /*0xff00ef*/);
-				gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, color /*0x00006f*/);
-			}
-			/*
-			gdImageSetPixel(tile->img, pix.x+1, pix.y+1, spdclr[spd]);
-			gdImageSetPixel(tile->img, pix.x-1, pix.y-1, spdclr[spd]);
-			gdImageSetPixel(tile->img, pix.x+1, pix.y-1, spdclr[spd]);
-			gdImageSetPixel(tile->img, pix.x-1, pix.y+1, spdclr[spd]);
-			*/
-		}
-	}
+	for (f = files; f; f = f->next)
+		draw_track(f->gpx->points, z);
 }
 
 static inline void save_zoom_level(int z)
