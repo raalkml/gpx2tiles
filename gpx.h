@@ -52,12 +52,14 @@ extern const char GPX_SRC_GPS[];
 extern const char GPX_SRC_SYNTHETIC[];
 extern const char GPX_SRC_UNKNOWN[];
 
-struct gpx_point *new_trk_point(); /* GPX_SRC_SYNTHETIC */
+struct gpx_point *new_trk_point(void); /* GPX_SRC_SYNTHETIC */
 void free_trk_point(struct gpx_point *);
 void put_trk_point(struct gpx_data *, struct gpx_point *);
 
 struct gpx_data *gpx_read_file(const char *path);
 void gpx_free(struct gpx_data *);
+
+void gpx_libxml_cleanup(void);
 
 #endif /* _GPX_H_ */
 

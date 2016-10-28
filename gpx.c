@@ -24,7 +24,7 @@ const char GPX_SRC_GPS[] = "gps";
 const char GPX_SRC_SYNTHETIC[] = "synt";
 const char GPX_SRC_UNKNOWN[] = "unk";
 
-struct gpx_point *new_trk_point()
+struct gpx_point *new_trk_point(void)
 {
 	struct gpx_point *pt = malloc(sizeof(*pt));
 
@@ -117,10 +117,12 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt, int trk, int 
 		pt = new_trk_point();
 		nptr = ASCII xmlGetProp(xpt, BAD_CAST "lat");
 		pt->loc.lat = strtod(nptr, &err);
+		xmlFree(nptr);
 		if ((pt->loc.lat == 0.0 && nptr == err) || pt->loc.lat == HUGE_VAL)
 			goto fail;
 		nptr = ASCII xmlGetProp(xpt, BAD_CAST "lon");
 		pt->loc.lon = strtod(nptr, &err);
+		xmlFree(nptr);
 		if ((pt->loc.lon == 0.0 && nptr == err) || pt->loc.lon == HUGE_VAL)
 			goto fail;
 		pt->flags |= GPX_PT_LATLON;
@@ -191,8 +193,22 @@ struct gpx_data *gpx_read_file(const char *path)
 	return gpxf;
 }
 
-void gpx_free(struct gpx_data *gpxf)
+void gpx_free(struct gpx_data *gpx)
 {
-	free(gpxf->path);
-	free(gpxf);
+	while (gpx->points) {
+		struct gpx_point *pt = gpx->points;
+		gpx->points = gpx->points->next;
+		free_trk_point(pt);
+	}
+	free(gpx->path);
+	free(gpx);
 }
+
+/* for valgrind */
+void gpx_libxml_cleanup(void)
+{
+	xmlCleanupCharEncodingHandlers();
+	xmlCleanupParser();
+	xmlCleanupGlobals();
+}
+
