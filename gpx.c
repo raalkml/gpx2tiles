@@ -19,6 +19,17 @@ static inline size_t strlcpy(char* tgt, const char* src, size_t size)
 	return r;
 }
 
+#define slist_init(p, field) do { \
+	(p)->field = NULL; \
+	(p)->field ## _tail = &(p)->field; \
+} while(0)
+#define slist_append(p, field, i) do { \
+	typeof(*(p)->field) **__tail = (p)->field ## _tail; \
+	(i)->next = NULL; \
+	(p)->field ## _tail = &(i)->next; \
+	*__tail = i; \
+} while(0)
+
 
 const char GPX_SRC_GPS[] = "gps";
 const char GPX_SRC_SYNTHETIC[] = "synt";
@@ -42,10 +53,7 @@ void free_trk_point(struct gpx_point *pt)
 
 void put_trk_point(struct gpx_data *gpxf, struct gpx_point *pt)
 {
-	struct gpx_point **tail = gpxf->points_tail;
-	pt->next = NULL;
-	gpxf->points_tail = &pt->next;
-	*tail = pt;
+	slist_append(seg, points, pt);
 }
 
 void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
@@ -147,8 +155,7 @@ struct gpx_data *gpx_read_file(const char *path)
 
 	gpxf->path = strdup(path);
 	gpxf->points_cnt = 0;
-	gpxf->points = NULL;
-	gpxf->points_tail = &gpxf->points;
+	slist_init(gpxf, segments);
 	memset(gpxf->time, 0, sizeof(gpxf->time));
 
 	xml = xmlReadFile(gpxf->path,
