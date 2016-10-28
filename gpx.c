@@ -114,8 +114,36 @@ void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
 	}
 }
 
+/*
+ * Distance between two geographical points using spherical law of cosines
+ * approximation.
+ * The implementation shamelessly stolen from Leaflet 1.0
+ */
+double earth_distance(const struct gpx_latlon *latlng1,
+		      const struct gpx_latlon *latlng2)
+{
+	// Mean Earth Radius, as recommended for use by
+	// the International Union of Geodesy and Geophysics,
+	// see http://rosettacode.org/wiki/Haversine_formula
+	const double R = 6371000;
+
+	const double rad = M_PI / 180.0;
+	const double lat1 = latlng1->lat * rad;
+	const double lat2 = latlng2->lat * rad;
+	double a = sin(lat1) * sin(lat2) + cos(lat1) * cos(lat2) * cos((latlng2->lon - latlng1->lon) * rad);
+
+	return R * acos(a < 1.0 ? a : 1.0);
+}
+
+static void synthesize_speed(struct gpx_point *pt, const struct gpx_point *ppt)
+{
+	double d = earth_distance(&ppt->loc, &pt->loc);
+	fprintf(stderr, "distance between %s and %s : %f\n", ppt->time, pt->time, d);
+}
+
 static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, int nseg*/)
 {
+	struct gpx_point *ppt = NULL;
 	struct gpx_segment *seg = NULL;
 	int ptcnt = 0;
 	for (; xpt; xpt = xmlNextElementSibling(xpt)) {
@@ -139,11 +167,14 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 			goto fail;
 		pt->flags |= GPX_PT_LATLON;
 		parse_trkpt(xpt, pt);
+		if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME && ppt)
+			synthesize_speed(pt, ppt);
 		//pt->trk = trk;
 		//pt->seg = nseg;
 		if (!seg)
 			seg = new_trk_segment();
 		put_trk_point(seg, pt);
+		ppt = pt;
 		++ptcnt;
 		continue;
 	fail:
