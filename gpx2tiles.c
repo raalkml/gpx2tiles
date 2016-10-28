@@ -13,6 +13,7 @@
 #include "slippy-map.h"
 
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
+#define intmod(a) ({int __a = (a); __a < 0 ? -__a : __a;})
 
 static int zoom_min = 1, zoom_max = 18;
 
@@ -243,13 +244,16 @@ static void make_tiles(struct gpx_file *files, int z)
 
 			if (!tile)
 				continue;
+
 			struct xy pix = getPixelPosForCoordinates(&pt->loc, z, w, n);
 			struct xy ppix = pix;
+			struct xy pxy = xy;
+			struct tile *ptile = tile;
+
 			if (ppt != pt) {
-				struct xy pxy = get_tile_xy(&ppt->loc, z);
-				struct tile *ptile = get_tile(&pxy, z);
-				if (tile == ptile)
-					ppix = getPixelPosForCoordinates(&ppt->loc, z, w, n);
+				pxy = get_tile_xy(&ppt->loc, z);
+				ptile = get_tile(&pxy, z);
+				ppix = getPixelPosForCoordinates(&ppt->loc, z, w, n);
 			}
 			static const int spdclr[] = {
 				gdTrueColor(0x00, 0x00, 0x7f),
@@ -287,17 +291,42 @@ static void make_tiles(struct gpx_file *files, int z)
 				spd = speed;
 			*/
 			spd = speed;
-			if (ppix.x == pix.x && ppix.y == pix.y)
+			if (tile == ptile) {
+				if (ppix.x == pix.x && ppix.y == pix.y)
+					gdImageSetPixel(tile->img, pix.x, pix.y, spdclr[spd]);
+				else
+					gdImageLine(tile->img, ppix.x, ppix.y, pix.x, pix.y, spdclr[spd]);
+			} else {
+				int px = pix.x, py = pix.y;
+				int ppx = ppix.x, ppy = ppix.y;
+
+				if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
+					printf("\nz %d %s and %s far apart: dx=%d, dy=%d\n\n",
+					       z, pt->time, ppt->time,
+					       tile->xy.x - ptile->xy.x,
+					       tile->xy.y - ptile->xy.y);
+
 				gdImageSetPixel(tile->img, pix.x, pix.y, spdclr[spd]);
-			else
-				gdImageLine(tile->img,
-					    ppix.x, ppix.y,
-					    pix.x, pix.y,
-					    spdclr[spd]);
+				if (ptile->xy.y == tile->xy.y) {
+					if (ptile->xy.x < tile->xy.x)
+						px = 0, ppx = 256;
+					else
+						px = 256, ppx = 0;
+				} else if (ptile->xy.x == tile->xy.x) {
+					if (ptile->xy.y < tile->xy.y)
+						py = 0, ppy = 256;
+					else
+						py = 256, ppy = 0;
+				}
+				gdImageLine(tile->img, px, py, pix.x, pix.y, 0x0000ef);
+				gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, 0x00006f);
+			}
+			/*
 			gdImageSetPixel(tile->img, pix.x+1, pix.y+1, spdclr[spd]);
 			gdImageSetPixel(tile->img, pix.x-1, pix.y-1, spdclr[spd]);
 			gdImageSetPixel(tile->img, pix.x+1, pix.y-1, spdclr[spd]);
 			gdImageSetPixel(tile->img, pix.x-1, pix.y+1, spdclr[spd]);
+			*/
 		}
 	}
 }
