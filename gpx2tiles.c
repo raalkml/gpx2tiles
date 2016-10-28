@@ -237,7 +237,9 @@ static void draw_track(struct gpx_point *points, int z)
 			ptile = get_tile(&pxy, z);
 			ppix = getPixelPosForCoordinates(&ppt->loc, z);
 		}
+
 		int spd = speed;
+
 		if (pt->flags & GPX_PT_SPEED) {
 			double kph = pt->speed * 3.6;
 			if (kph <= 10.0)
@@ -250,7 +252,9 @@ static void draw_track(struct gpx_point *points, int z)
 				speed = 4;
 		}
 		spd = speed;
+
 		int color = spdclr[spd]; // gdAntiAliased produced really bad results on light maps
+
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
 		if (z < Z_NO_LINES)
@@ -259,40 +263,31 @@ static void draw_track(struct gpx_point *points, int z)
 		gdImageSetAntiAliased(tile->img, spdclr[spd]);
 		if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
 			int d = (int)floor(pt->pdop * 3);
+
 			gdImageEllipse(tile->img, pix.x, pix.y,
 				       d, d, (20 << 24) | color);
 		}
 		if (tile == ptile) {
-			if (!(ppix.x == pix.x && ppix.y == pix.y))
-				gdImageLine(tile->img, ppix.x, ppix.y, pix.x, pix.y, color);
-		} else {
-			int px = pix.x, py = pix.y;
-			int ppx = ppix.x, ppy = ppix.y;
-#if 0
-			if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
-				printf("\nz %d %s and %s far apart: dx=%d, dy=%d\n\n",
-				       z, pt->time, ppt->time,
-				       tile->xy.x - ptile->xy.x,
-				       tile->xy.y - ptile->xy.y);
-#endif
-			if (ptile->xy.y == tile->xy.y) {
-				if (ptile->xy.x < tile->xy.x)
-					px = 0, ppx = 256;
-				else
-					px = 256, ppx = 0;
-			} else if (ptile->xy.x == tile->xy.x) {
-				if (ptile->xy.y < tile->xy.y)
-					py = 0, ppy = 256;
-				else
-					py = 256, ppy = 0;
-			}
-			px = ppix.x - (tile->xy.x - ptile->xy.x) * 256;
-			py = ppix.y - (tile->xy.y - ptile->xy.y) * 256;
-			ppx = pix.x - (-tile->xy.x + ptile->xy.x) * 256;
-			ppy = pix.y - (-tile->xy.y + ptile->xy.y) * 256;
-			gdImageLine(tile->img, px, py, pix.x, pix.y, color /*0xff00ef*/);
-			gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, color /*0x00006f*/);
+			if (ppix.x != pix.x || ppix.y != pix.y)
+				gdImageLine(tile->img, pix.x, pix.y, ppix.x, ppix.y, color);
+			continue;
 		}
+#if 0
+		if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
+			printf("\nz %d %s and %s far apart: dx=%d, dy=%d\n\n",
+			       z, pt->time, ppt->time,
+			       tile->xy.x - ptile->xy.x,
+			       tile->xy.y - ptile->xy.y);
+#endif
+		int px = ppix.x - (tile->xy.x - ptile->xy.x) * 256;
+		int py = ppix.y - (tile->xy.y - ptile->xy.y) * 256;
+
+		gdImageLine(tile->img, px, py, pix.x, pix.y, color /*0xff00ef*/);
+
+		int ppx = pix.x - (ptile->xy.x -tile->xy.x) * 256;
+		int ppy = pix.y - (ptile->xy.y - tile->xy.y) * 256;
+
+		gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, color /*0x00006f*/);
 	}
 }
 
