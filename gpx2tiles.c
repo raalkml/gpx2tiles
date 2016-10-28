@@ -101,7 +101,7 @@ struct tile {
 	struct tile *next;
 	struct xy xy;
 	struct gpx_latlon loc;
-	int points;
+	int point_cnt;
 	gdImage *img;
 };
 
@@ -142,7 +142,7 @@ static struct tile *create_tile(const struct xy *xy, int z)
 		tile->xy = *xy;
 		tile->loc.lat = tiley2lat(xy->y, z);
 		tile->loc.lon = tilex2long(xy->x, z);
-		tile->points = 0;
+		tile->point_cnt = 0;
 		tile->img = gdImageCreateTrueColor(256, 256);;
 		gdImageColorTransparent(tile->img, transparent);
 		gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
@@ -317,7 +317,7 @@ static inline void save_zoom_level(int z)
 				len += printf("z %d", z);
 			len += printf(" %d/%d (%d)",
 				      tile->xy.x, tile->xy.y,
-				      tile->points);
+				      tile->point_cnt);
 			if (len >= 60) {
 				fputc('\n', stdout);
 				len = 0;

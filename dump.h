@@ -57,7 +57,7 @@ static inline void dump_zoom_level(int z)
 		for (tile = zoom_levels[z].tiles[h]; tile; tile = tile->next) {
 			len += printf(" %d/%d (%d)",
 				      tile->xy.x, tile->xy.y,
-				      tile->points);
+				      tile->point_cnt);
 			if (len >= 60) {
 				fputc('\n', stdout);
 				len = 0;
