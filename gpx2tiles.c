@@ -226,6 +226,7 @@ static void draw_track_points(struct gpx_point *points, int z)
 		if (!tile)
 			continue;
 
+		tile->point_cnt++;
 		struct xy pix = getPixelPosForCoordinates(&pt->loc, z);
 		struct xy ppix = pix;
 		struct xy pxy = xy;
