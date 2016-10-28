@@ -250,8 +250,6 @@ static void draw_track_points(struct gpx_point *points, int z)
 			else if (kph > 25.0)
 				speed = 4;
 		}
-		else
-			fprintf(stderr, "%s has no speed\n", pt->time);
 
 		int color = spdclr[speed]; // gdAntiAliased produced really bad results on light maps
 

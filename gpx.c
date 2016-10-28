@@ -1,6 +1,9 @@
+#define _XOPEN_SOURCE
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 #include <libxml/parser.h>
 #include "gpx.h"
 
@@ -135,17 +138,47 @@ double earth_distance(const struct gpx_latlon *latlng1,
 	return R * acos(a < 1.0 ? a : 1.0);
 }
 
+static time_t gpxtime2sec(const char *t)
+{
+	struct tm tm;
+	time_t utc = time(NULL);
+	tm = *gmtime(&utc);
+	char *p = strptime(t, "%Y-%m-%dT%H:%M:%S", &tm);
+	if (p) {
+		return mktime(&tm);
+	}
+	return utc;
+}
+
 static void synthesize_speed(struct gpx_point *pt, const struct gpx_point *ppt)
 {
-	double d = earth_distance(&ppt->loc, &pt->loc);
-	fprintf(stderr, "distance between %s and %s : %f\n", ppt->time, pt->time, d);
+	pt->flags = GPX_PT_SPEED;
+	if ((ppt->flags & GPX_PT_SPEED) && pt->next && (pt->next->flags & GPX_PT_SPEED)) {
+		pt->speed = (ppt->speed + pt->next->speed) / 2.0;
+		fprintf(stderr, "speed:   averaged %5.2f kph from %s (%3.2f) to %s (%3.2f)\n",
+			pt->speed * 3.6,
+			ppt->time, ppt->speed * 3.6,
+			pt->next->time, pt->next->speed * 3.6);
+	} else {
+		double d = earth_distance(&ppt->loc, &pt->loc);
+		time_t t = gpxtime2sec(pt->time) - gpxtime2sec(ppt->time);
+		if (t < 1)
+			t = 1;
+		pt->speed = d / (double)t;
+		fprintf(stderr, "speed: calculated %5.2f kph from %s to %s: %.2f m, %ld sec, "
+			"PDOP %.1f\n",
+			3.6 * pt->speed,
+			ppt->time, pt->time,
+			d, (long)t,
+			pt->flags & GPX_PT_PDOP ? pt->pdop : 99.);
+	}
 }
 
 static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, int nseg*/)
 {
-	struct gpx_point *ppt = NULL;
 	struct gpx_segment *seg = NULL;
 	int ptcnt = 0;
+	int synspeed = 0;
 	for (; xpt; xpt = xmlNextElementSibling(xpt)) {
 		char *err, *nptr;
 		struct gpx_point *pt;
@@ -167,21 +200,27 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 			goto fail;
 		pt->flags |= GPX_PT_LATLON;
 		parse_trkpt(xpt, pt);
-		if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME && ppt)
-			synthesize_speed(pt, ppt);
+		if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME)
+			synspeed = 1;
 		//pt->trk = trk;
 		//pt->seg = nseg;
 		if (!seg)
 			seg = new_trk_segment();
 		put_trk_point(seg, pt);
-		ppt = pt;
 		++ptcnt;
 		continue;
 	fail:
 		free_trk_point(pt);
 	}
-	if (seg)
+	if (seg) {
+		struct gpx_point *pt = seg->points;
+		struct gpx_point *ppt = NULL;
+
+		for (; synspeed && pt; ppt = pt, pt = pt->next)
+			if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME && ppt)
+				synthesize_speed(pt, ppt);
 		put_trk_segment(gpxf, seg);
+	}
 	return ptcnt;
 }
 
