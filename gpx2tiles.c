@@ -218,7 +218,6 @@ static const int spdclr[] = {
 static void draw_track(struct gpx_point *points, int z)
 {
 	struct gpx_point *pt, *ppt;
-	int speed = 0;
 
 	for (pt = ppt = points; pt; ppt = pt, pt = pt->next) {
 		struct xy xy = get_tile_xy(&pt->loc, z);
@@ -231,14 +230,13 @@ static void draw_track(struct gpx_point *points, int z)
 		struct xy ppix = pix;
 		struct xy pxy = xy;
 		struct tile *ptile = tile;
+		int speed = 0;
 
 		if (ppt != pt) {
 			pxy = get_tile_xy(&ppt->loc, z);
 			ptile = get_tile(&pxy, z);
 			ppix = getPixelPosForCoordinates(&ppt->loc, z);
 		}
-
-		int spd = speed;
 
 		if (pt->flags & GPX_PT_SPEED) {
 			double kph = pt->speed * 3.6;
@@ -248,19 +246,18 @@ static void draw_track(struct gpx_point *points, int z)
 				speed = 2;
 			else if (kph <= 25.0)
 				speed = 3;
-			else if (kph > 30.0)
+			else if (kph > 25.0)
 				speed = 4;
 		}
-		spd = speed;
 
-		int color = spdclr[spd]; // gdAntiAliased produced really bad results on light maps
+		int color = spdclr[speed]; // gdAntiAliased produced really bad results on light maps
 
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
 		if (z < Z_NO_LINES)
 			continue;
 
-		gdImageSetAntiAliased(tile->img, spdclr[spd]);
+		gdImageSetAntiAliased(tile->img, color);
 		if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
 			int d = (int)floor(pt->pdop * 3);
 
