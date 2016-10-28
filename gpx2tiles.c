@@ -215,7 +215,7 @@ static const int spdclr[] = {
 	 *
 	 */
 };
-static void draw_track(struct gpx_point *points, int z)
+static void draw_track_points(struct gpx_point *points, int z)
 {
 	struct gpx_point *pt, *ppt;
 
@@ -249,6 +249,8 @@ static void draw_track(struct gpx_point *points, int z)
 			else if (kph > 25.0)
 				speed = 4;
 		}
+		else
+			fprintf(stderr, "%s has no speed\n", pt->time);
 
 		int color = spdclr[speed]; // gdAntiAliased produced really bad results on light maps
 
@@ -292,8 +294,12 @@ static void make_tiles(struct gpx_file *files, int z)
 {
 	struct gpx_file *f;
 
-	for (f = files; f; f = f->next)
-		draw_track(f->gpx->points, z);
+	for (f = files; f; f = f->next) {
+		struct gpx_segment *seg;
+
+		for (seg = f->gpx->segments; seg; seg = seg->next)
+			draw_track_points(seg->points, z);
+	}
 }
 
 static inline void save_zoom_level(int z)

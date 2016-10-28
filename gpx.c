@@ -52,7 +52,7 @@ void free_trk_point(struct gpx_point *pt)
 	free(pt);
 }
 
-void put_trk_point(struct gpx_data *gpxf, struct gpx_point *pt)
+void put_trk_point(struct gpx_segment *seg, struct gpx_point *pt)
 {
 	slist_append(seg, points, pt);
 }
@@ -116,6 +116,7 @@ void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
 
 static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, int nseg*/)
 {
+	struct gpx_segment *seg = NULL;
 	int ptcnt = 0;
 	for (; xpt; xpt = xmlNextElementSibling(xpt)) {
 		char *err, *nptr;
@@ -140,13 +141,41 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 		parse_trkpt(xpt, pt);
 		//pt->trk = trk;
 		//pt->seg = nseg;
-		put_trk_point(gpxf, pt);
+		if (!seg)
+			seg = new_trk_segment();
+		put_trk_point(seg, pt);
 		++ptcnt;
 		continue;
 	fail:
 		free_trk_point(pt);
 	}
+	if (seg)
+		put_trk_segment(gpxf, seg);
 	return ptcnt;
+}
+
+struct gpx_segment *new_trk_segment(void)
+{
+	struct gpx_segment *seg = malloc(sizeof(*seg));
+
+	seg->next = NULL;
+	slist_init(seg, points);
+	return seg;
+}
+
+void free_trk_segment(struct gpx_segment *seg)
+{
+	while (seg->points) {
+		struct gpx_point *pt = seg->points;
+		seg->points = seg->points->next;
+		free_trk_point(pt);
+	}
+	free(seg);
+}
+
+void put_trk_segment(struct gpx_data *gpx, struct gpx_segment *seg)
+{
+	slist_append(gpx, segments, seg);
 }
 
 struct gpx_data *gpx_read_file(const char *path)
@@ -204,10 +233,10 @@ struct gpx_data *gpx_read_file(const char *path)
 
 void gpx_free(struct gpx_data *gpx)
 {
-	while (gpx->points) {
-		struct gpx_point *pt = gpx->points;
-		gpx->points = gpx->points->next;
-		free_trk_point(pt);
+	while (gpx->segments) {
+		struct gpx_segment *seg = gpx->segments;
+		gpx->segments = gpx->segments->next;
+		free_trk_segment(seg);
 	}
 	free(gpx->path);
 	free(gpx);

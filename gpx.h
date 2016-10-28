@@ -6,16 +6,24 @@ struct gpx_latlon
 	double lat, lon;
 };
 
-struct gpx_point;
+struct gpx_segment;
 
 struct gpx_data
 {
 	char *path;
 	char time[24];
 
-	/* just all points, in all tracks, all segments */
-	struct gpx_point *points, **points_tail;
+	struct gpx_segment *segments, **segments_tail;
 	int points_cnt, track_cnt;
+};
+
+struct gpx_point;
+
+struct gpx_segment
+{
+	struct gpx_segment *next;
+
+	struct gpx_point *points, **points_tail;
 };
 
 #define GPX_PT_LATLON  (1 << 0)
@@ -54,7 +62,11 @@ extern const char GPX_SRC_UNKNOWN[];
 
 struct gpx_point *new_trk_point(void); /* GPX_SRC_SYNTHETIC */
 void free_trk_point(struct gpx_point *);
-void put_trk_point(struct gpx_data *, struct gpx_point *);
+void put_trk_point(struct gpx_segment *, struct gpx_point *);
+
+struct gpx_segment *new_trk_segment(void);
+void free_trk_segment(struct gpx_segment *);
+void put_trk_segment(struct gpx_data *, struct gpx_segment *);
 
 struct gpx_data *gpx_read_file(const char *path);
 void gpx_free(struct gpx_data *);

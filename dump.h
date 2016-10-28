@@ -18,32 +18,38 @@ if (pt->flags & GPX_PT_SPEED)
 static inline void dump_points(struct gpx_file *f)
 {
 	for (; f; f = f->next) {
-		struct gpx_point *pt;
+		const struct gpx_segment *seg;
+		int nseg;
 		printf("From %s (%d)\n", f->gpx->path, f->gpx->points_cnt);
-		for (pt = f->gpx->points; pt; pt = pt->next) {
-			printf(" %f,%f %s\n", pt->loc.lat, pt->loc.lon, pt->time);
-			int z, len = 0;
-			for (z = 1; z <= 18; ++z) {
-				struct xy tile = get_tile_xy(&pt->loc, z);
-				len += printf(" %d/%d/%d", z, tile.x, tile.y);
-				if (len >= 60) {
-					fputc('\n', stdout);
-					len = 0;
+
+		for (seg = f->gpx->segments, nseg = 0; seg; ++nseg, seg = seg->next) {
+			const struct gpx_point *pt;
+
+			for (pt = seg->points; pt; pt = pt->next) {
+				printf(" %d: %f,%f %s\n", nseg, pt->loc.lat, pt->loc.lon, pt->time);
+				int z, len = 0;
+				for (z = 1; z <= 18; ++z) {
+					struct xy tile = get_tile_xy(&pt->loc, z);
+					len += printf(" %d/%d/%d", z, tile.x, tile.y);
+					if (len >= 60) {
+						fputc('\n', stdout);
+						len = 0;
+					}
 				}
-			}
-			if (pt->flags & GPX_PT_ELE)
-				printf("  ele %f\n", pt->ele);
-			if (pt->flags & GPX_PT_SPEED)
-				printf("  spd %f\n", pt->speed);
-			if (pt->flags & (GPX_PT_HDOP|GPX_PT_VDOP|GPX_PT_PDOP)) {
-				fputc(' ', stdout);
-				if (pt->flags & GPX_PT_HDOP)
-					printf(" hdop %f", pt->hdop);
-				if (pt->flags & GPX_PT_VDOP)
-					printf(" vdop %f", pt->vdop);
-				if (pt->flags & GPX_PT_PDOP)
-					printf(" pdop %f", pt->pdop);
-				fputc('\n', stdout);
+				if (pt->flags & GPX_PT_ELE)
+					printf("  ele %f\n", pt->ele);
+				if (pt->flags & GPX_PT_SPEED)
+					printf("  spd %f\n", pt->speed);
+				if (pt->flags & (GPX_PT_HDOP|GPX_PT_VDOP|GPX_PT_PDOP)) {
+					fputc(' ', stdout);
+					if (pt->flags & GPX_PT_HDOP)
+						printf(" hdop %f", pt->hdop);
+					if (pt->flags & GPX_PT_VDOP)
+						printf(" vdop %f", pt->vdop);
+					if (pt->flags & GPX_PT_PDOP)
+						printf(" pdop %f", pt->pdop);
+					fputc('\n', stdout);
+				}
 			}
 		}
 	}
