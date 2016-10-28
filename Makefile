@@ -5,9 +5,9 @@ target = gpx2tiles
 ofiles = $(patsubst %.c,$(odir)/%.o,$(sources))
 
 CC := gcc
-CFLAGS := -Wall -ggdb -O1
+CFLAGS := -Wall -ggdb -O3
 CPPFLAGS := $(shell pkg-config --cflags gdlib) $(shell pkg-config --cflags libxml-2.0)
-LDFLAGS := -ggdb -O1
+LDFLAGS := -Wall -ggdb -O3
 LDLIBS := $(shell pkg-config --libs gdlib) $(shell pkg-config --libs libxml-2.0) -lm
 
 build: $(target)
