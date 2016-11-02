@@ -132,23 +132,31 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 	return tile;
 }
 
+static struct tile *free_tiles;
+
 static struct tile *create_tile(const struct xy *xy, int z)
 {
 	struct tile *tile = NULL;
 
 	if (zoom_min <= z && z <= zoom_max) {
 		unsigned h = hash_xy(xy);
-		int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
+		const int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
 	
-		tile = malloc(sizeof(*tile));
+		if (free_tiles) {
+			tile = free_tiles;
+			free_tiles = free_tiles->next;
+			gdImageFilledRectangle(tile->img, 0, 0, 256, 256, 0);
+		} else {
+			tile = malloc(sizeof(*tile));
+			tile->img = gdImageCreateTrueColor(256, 256);;
+			gdImageColorTransparent(tile->img, transparent);
+			gdImageSetAntiAliased(tile->img, gdTrueColorAlpha(0, 255, 0, 0));
+		}
+		gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
 		tile->xy = *xy;
 		tile->loc.lat = tiley2lat(xy->y, z);
 		tile->loc.lon = tilex2long(xy->x, z);
 		tile->point_cnt = 0;
-		tile->img = gdImageCreateTrueColor(256, 256);;
-		gdImageColorTransparent(tile->img, transparent);
-		gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
-		gdImageSetAntiAliased(tile->img, gdTrueColorAlpha(0, 255, 0, 0));
 
 		tile->next = zoom_levels[z].tiles[h];
 		zoom_levels[z].tiles[h] = tile;
@@ -158,8 +166,8 @@ static struct tile *create_tile(const struct xy *xy, int z)
 }
 static void destroy_tile(struct tile *tile)
 {
-	gdImageDestroy(tile->img);
-	free(tile);
+	tile->next = free_tiles;
+	free_tiles = tile;
 }
 
 static struct tile *get_tile(const struct xy *xy, int z)
@@ -448,6 +456,12 @@ int main(int argc, char *argv[])
 		gf = next;
 	}
 	free(zoom_levels);
+	while (free_tiles) {
+		struct tile *next = free_tiles->next;
+		gdImageDestroy(free_tiles->img);
+		free(free_tiles);
+		free_tiles = next;
+	}
 	return 0;
 }
 
