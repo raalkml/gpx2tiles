@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <getopt.h>
+#include <pthread.h>
 #include <gd.h>
 #include "gpx.h"
 #include "tstime.h"
@@ -350,6 +351,51 @@ static inline void save_zoom_level(int z)
 
 #include "dump.h"
 
+struct load
+{
+	struct load *next;
+	const char *path;
+	struct gpx_file *gf;
+};
+
+static pthread_mutex_t load_q_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t load_q_cond = PTHREAD_COND_INITIALIZER;
+static struct load *load_q, **load_q_tail = &load_q, *load_free;
+
+static void *loader(void *arg)
+{
+	struct load *lq = NULL;
+
+	while (1) {
+		pthread_mutex_lock(&load_q_lock);
+		if (lq) {
+			lq->next = load_free;
+			load_free = lq;
+			lq = NULL;
+		}
+		if (!load_q)
+			pthread_cond_wait(&load_q_cond, &load_q_lock);
+		if (load_q) {
+			if (!load_q->gf) {
+				pthread_mutex_unlock(&load_q_lock);
+				pthread_exit(NULL);
+			}
+			lq = load_q;
+			load_q = load_q->next;
+			if (!load_q)
+				load_q_tail = &load_q;
+		}
+		pthread_mutex_unlock(&load_q_lock);
+		if (!lq)
+			continue;
+		if (verbose)
+			fprintf(stderr, "%ld: %s open\n", (long)pthread_self(), lq->path);
+		lq->gf->gpx = gpx_read_file(lq->path);
+		if (verbose)
+			fprintf(stderr, "%ld: %s loaded\n", (long)pthread_self(), lq->path);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	int cd_to = -1;
@@ -358,9 +404,11 @@ int main(int argc, char *argv[])
 	struct gpx_file *files = NULL, **files_tail = &files;
 	int points_cnt = 0, files_cnt = 0;
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
+	int parallel = 4;
+	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:v")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:v")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -381,19 +429,39 @@ int main(int argc, char *argv[])
 		case 'v':
 			++verbose;
 			break;
+		case 'j':
+			parallel = strtol(optarg, NULL, 0);
+			break;
 		case '?':
 			fprintf(stderr, "%s [-z] [--] [gpx files...]\n", argv[0]);
 			exit(1);
 		}
+	if (!opt)
+		exit(2);
 	clock_gettime(CLOCK_MONOTONIC, &start);
+	struct load *lq;
 	for (; optind < argc; ++optind) {
-		gf = malloc(sizeof(*gf));
-		gf->next = NULL;
-		gf->gpx = gpx_read_file(argv[optind]);
+		lq = malloc(sizeof(*lq));
+		lq->next = NULL;
+		lq->path = argv[optind];
+		lq->gf = calloc(1, sizeof(*lq->gf));
+		lq->gf->next = NULL;
+		lq->gf->gpx = NULL;
 		++files_cnt;
-		*files_tail = gf;
-		files_tail = &gf->next;
-		points_cnt += gf->gpx->points_cnt;
+		*files_tail = lq->gf;
+		files_tail = &lq->gf->next;
+		*load_q_tail = lq;
+		load_q_tail = &lq->next;
+	}
+	if (parallel < 1)
+		parallel = 1;
+	loaders = malloc(parallel * sizeof(*loaders));
+	for (opt = 0; opt < parallel; ++opt) {
+		int err = pthread_create(loaders + opt, NULL, loader, NULL);
+		if (err) {
+			fprintf(stderr, "pthread_create: %s (%d)\n", strerror(err), err);
+			break;
+		}
 	}
 	if (stdin_files) {
 		char buf[BUFSIZ];
@@ -402,15 +470,27 @@ int main(int argc, char *argv[])
 
 		while ((rd = read(STDIN_FILENO, buf + off, rd)) > 0) {
 			for (pos = 0;;) {
-				len = strnlen(buf + pos, sizeof(buf) - pos);
+				len = strnlen(buf + pos, rd - pos);
 				if (pos + len < off + rd) {
-					gf = malloc(sizeof(*gf));
-					gf->next = NULL;
-					gf->gpx = gpx_read_file(buf + pos);
+					pthread_mutex_lock(&load_q_lock);
+					if (!load_free)
+						lq = malloc(sizeof(*lq));
+					else {
+						lq = load_free;
+						load_free = load_free->next;
+					}
+					lq->path = buf + pos;
+					lq->next = NULL;
+					lq->gf = calloc(1, sizeof(*lq->gf));
+					lq->gf->next = NULL;
+					lq->gf->gpx = NULL;
 					++files_cnt;
-					*files_tail = gf;
-					files_tail = &gf->next;
-					points_cnt += gf->gpx->points_cnt;
+					*files_tail = lq->gf;
+					files_tail = &lq->gf->next;
+					*load_q_tail = lq;
+					load_q_tail = &lq->next;
+					pthread_cond_broadcast(&load_q_cond);
+					pthread_mutex_unlock(&load_q_lock);
 					pos += len + 1;
 				} else {
 					if (len == rd) {
@@ -426,9 +506,36 @@ int main(int argc, char *argv[])
 					break;
 				}
 			}
+			while (1) {
+				int done;
+				pthread_mutex_lock(&load_q_lock);
+				done = load_q == NULL;
+				pthread_mutex_unlock(&load_q_lock);
+				if (done)
+					break;
+				usleep(100);
+			}
 		}
 	}
+	/* loader queue terminator */
+	lq = calloc(1, sizeof(*lq));
+	pthread_mutex_lock(&load_q_lock);
+	*load_q_tail = lq;
+	load_q_tail = &lq->next;
+	pthread_cond_broadcast(&load_q_cond);
+	pthread_mutex_unlock(&load_q_lock);
+	for (opt = 0; opt < parallel; ++opt)
+		pthread_join(loaders[opt], NULL);
 	clock_gettime(CLOCK_MONOTONIC, &end);
+	while (load_free) {
+		lq = load_free;
+		load_free = load_free->next;
+		free(lq);
+	}
+	free(load_q);
+	free(loaders);
+	for (gf = files; gf; gf = gf->next)
+		points_cnt += gf->gpx->points_cnt;
 	duration = timespec_sub(end, start);
 	fprintf(stderr, "%d files, %d points, %ld.%09ld sec\n", files_cnt, points_cnt,
 	       duration.tv_sec, duration.tv_nsec);

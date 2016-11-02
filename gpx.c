@@ -157,7 +157,7 @@ static void synthesize_speed(struct gpx_point *pt, const struct gpx_point *ppt)
 	pt->flags = GPX_PT_SPEED;
 	if ((ppt->flags & GPX_PT_SPEED) && pt->next && (pt->next->flags & GPX_PT_SPEED)) {
 		pt->speed = (ppt->speed + pt->next->speed) / 2.0;
-		if (verbose)
+		if (verbose > 1)
 			fprintf(stderr, "speed:   averaged %5.2f kph from %s (%3.2f) to %s (%3.2f)\n",
 				pt->speed * 3.6,
 				ppt->time, ppt->speed * 3.6,
@@ -168,7 +168,7 @@ static void synthesize_speed(struct gpx_point *pt, const struct gpx_point *ppt)
 		if (t < 1)
 			t = 1;
 		pt->speed = d / (double)t;
-		if (verbose)
+		if (verbose > 1)
 			fprintf(stderr, "speed: calculated %5.2f kph from %s to %s: %.2f m, %ld sec, "
 				"PDOP %.1f\n",
 				3.6 * pt->speed,
