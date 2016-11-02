@@ -128,10 +128,11 @@ static inline unsigned hash_xy(const struct xy *xy)
 
 static struct tile *find_tile(const struct xy *xy, int zoom)
 {
-	struct tile *tile = zoom_min <= zoom && zoom <= zoom_max ?
-		zoom_levels[zoom].tiles[hash_xy(xy)].head : NULL;
+	struct tile *tile;
 
-	for (; tile; tile = tile->next)
+	if (zoom < zoom_min || zoom > zoom_max)
+		return NULL;
+	slist_for_each(tile, &zoom_levels[zoom].tiles[hash_xy(xy)])
 		if (tile->xy.x == xy->x && tile->xy.y == xy->y)
 			break;
 	return tile;
@@ -301,7 +302,7 @@ static void make_tiles(struct gpx_file *files, int z)
 	for (f = files; f; f = f->next) {
 		struct gpx_segment *seg;
 
-		for (seg = f->gpx->segments.head; seg; seg = seg->next)
+		slist_for_each(seg, &f->gpx->segments)
 			draw_track_points(seg->points.head, z);
 	}
 }
@@ -313,9 +314,7 @@ static inline void save_zoom_level(int z)
 	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
 		struct tile *tile;
 
-		for (tile = zoom_levels[z].tiles[h].head;
-		     tile;
-		     tile = tile->next) {
+		slist_for_each(tile, &zoom_levels[z].tiles[h]) {
 			char path[128];
 
 			snprintf(path, sizeof(path), "%d", z);
@@ -564,6 +563,7 @@ int main(int argc, char *argv[])
 	free(zoom_levels);
 	while (free_tiles.head) {
 		struct tile *t = slist_stack_pop(&free_tiles);
+
 		gdImageDestroy(t->img);
 		free(t);
 	}

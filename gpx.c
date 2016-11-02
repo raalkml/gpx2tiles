@@ -230,10 +230,8 @@ struct gpx_segment *new_trk_segment(void)
 
 void free_trk_segment(struct gpx_segment *seg)
 {
-	while (seg->points.head) {
-		struct gpx_point *pt = slist_pop(&seg->points);
-		free_trk_point(pt);
-	}
+	while (seg->points.head)
+		free_trk_point(slist_pop(&seg->points));
 	free(seg);
 }
 
@@ -293,10 +291,8 @@ struct gpx_data *gpx_read_file(const char *path)
 
 void gpx_free(struct gpx_data *gpx)
 {
-	while (gpx->segments.head) {
-		struct gpx_segment *seg = slist_pop(&gpx->segments);
-		free_trk_segment(seg);
-	}
+	while (gpx->segments.head)
+		free_trk_segment(slist_pop(&gpx->segments));
 	free(gpx->path);
 	free(gpx);
 }

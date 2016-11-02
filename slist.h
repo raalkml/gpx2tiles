@@ -44,4 +44,7 @@
 	__head; \
 })
 
+#define slist_for_each(i, list) \
+	for (i = (list)->head; i; i = i->next)
+
 #endif /* _SLIST_H_ */

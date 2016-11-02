@@ -1,33 +1,15 @@
-#if 0
-if (pt->flags & GPX_PT_ELE)
-	; // printf("  ele %f\n", pt->ele);
-if (pt->flags & GPX_PT_SPEED)
-	; // printf("  spd %f\n", pt->speed);
-	if (pt->flags & (GPX_PT_HDOP|GPX_PT_VDOP|GPX_PT_PDOP)) {
-		; // fputc(' ', stdout);
-		if (pt->flags & GPX_PT_HDOP)
-			; // printf(" hdop %f", pt->hdop);
-		if (pt->flags & GPX_PT_VDOP)
-			; // printf(" vdop %f", pt->vdop);
-		if (pt->flags & GPX_PT_PDOP)
-			; // printf(" pdop %f", pt->pdop);
-		; // fputc('\n', stdout);
-	}
-#endif
 
 static inline void dump_points(struct gpx_file *f)
 {
 	for (; f; f = f->next) {
 		const struct gpx_segment *seg;
-		int nseg;
+		int nseg = 0;
 		printf("From %s (%d)\n", f->gpx->path, f->gpx->points_cnt);
 
-		for (seg = f->gpx->segments.head, nseg = 0;
-		     seg;
-		     ++nseg, seg = seg->next) {
+		slist_for_each(seg, &f->gpx->segments) {
 			const struct gpx_point *pt;
 
-			for (pt = seg->points.head; pt; pt = pt->next) {
+			slist_for_each(pt, &seg->points) {
 				printf(" %d: %f,%f %s\n",
 				       nseg, pt->loc.lat, pt->loc.lon, pt->time);
 				int z, len = 0;
@@ -54,6 +36,7 @@ static inline void dump_points(struct gpx_file *f)
 					fputc('\n', stdout);
 				}
 			}
+			++nseg;
 		}
 	}
 }
@@ -65,9 +48,7 @@ static inline void dump_zoom_level(int z)
 	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
 		struct tile *tile;
 
-		for (tile = zoom_levels[z].tiles[h].head;
-		     tile;
-		     tile = tile->next) {
+		slist_for_each(tile, &zoom_levels[z].tiles[h]) {
 			len += printf(" %d/%d (%d)",
 				      tile->xy.x, tile->xy.y,
 				      tile->point_cnt);
@@ -80,3 +61,4 @@ static inline void dump_zoom_level(int z)
 	if (len)
 		fputc('\n', stdout);
 }
+
