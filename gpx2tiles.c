@@ -19,6 +19,9 @@
 
 static int zoom_min = 1, zoom_max = 18;
 
+extern int verbose;
+int verbose;
+
 /* Do not draw lines at zoom levels below Z_NO_LINES */
 #define Z_NO_LINES 7
 
@@ -328,6 +331,8 @@ static inline void save_zoom_level(int z)
 				gdImagePngEx(tile->img, fp, 4);
 				fclose(fp);
 			}
+			if (!verbose)
+				continue;
 			if (!len)
 				len += printf("z %d", z);
 			len += printf(" %d/%d (%d)",
@@ -339,7 +344,7 @@ static inline void save_zoom_level(int z)
 			}
 		}
 	}
-	if (len)
+	if (verbose && len)
 		fputc('\n', stdout);
 }
 
@@ -355,7 +360,7 @@ int main(int argc, char *argv[])
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:v")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -372,6 +377,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'Z':
 			zoom_max = strtol(optarg, NULL, 0);
+			break;
+		case 'v':
+			++verbose;
 			break;
 		case '?':
 			fprintf(stderr, "%s [-z] [--] [gpx files...]\n", argv[0]);
@@ -422,7 +430,7 @@ int main(int argc, char *argv[])
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	duration = timespec_sub(end, start);
-	fprintf(stderr, "%d files, %d points, %ld.%09ld\n", files_cnt, points_cnt,
+	fprintf(stderr, "%d files, %d points, %ld.%09ld sec\n", files_cnt, points_cnt,
 	       duration.tv_sec, duration.tv_nsec);
 	// dump_points(files);
 
@@ -437,17 +445,20 @@ int main(int argc, char *argv[])
 	for (z = zoom_min; z <= zoom_max; ++z) {
 		printf("z %d ", z); fflush(stdout);
 		make_tiles(files, z);
-		printf("(%d tiles, dx %f dy %f)\n", zoom_levels[z].tile_cnt,
-		       zoom_levels[z].xunit, zoom_levels[z].yunit);
+		printf("(%d tiles, dx %f dy %f)%s", zoom_levels[z].tile_cnt,
+		       zoom_levels[z].xunit, zoom_levels[z].yunit,
+		       verbose ? "\n" : "");
+		fflush(stdout);
 		// dump_zoom_level(z);
 		save_zoom_level(z);
 		free_zoom_level(z);
+		if (!verbose)
+			printf(" ... saved\n");
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	duration = timespec_sub(end, start);
 	fprintf(stderr, "z %d-%d processed in %ld.%09ld\n",
 		zoom_min, zoom_max, duration.tv_sec, duration.tv_nsec);
-
 	for (gf = files; gf;) {
 		struct gpx_file *next = gf->next;
 

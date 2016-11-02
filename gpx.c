@@ -152,25 +152,29 @@ static time_t gpxtime2sec(const char *t)
 
 static void synthesize_speed(struct gpx_point *pt, const struct gpx_point *ppt)
 {
+	extern int verbose;
+
 	pt->flags = GPX_PT_SPEED;
 	if ((ppt->flags & GPX_PT_SPEED) && pt->next && (pt->next->flags & GPX_PT_SPEED)) {
 		pt->speed = (ppt->speed + pt->next->speed) / 2.0;
-		fprintf(stderr, "speed:   averaged %5.2f kph from %s (%3.2f) to %s (%3.2f)\n",
-			pt->speed * 3.6,
-			ppt->time, ppt->speed * 3.6,
-			pt->next->time, pt->next->speed * 3.6);
+		if (verbose)
+			fprintf(stderr, "speed:   averaged %5.2f kph from %s (%3.2f) to %s (%3.2f)\n",
+				pt->speed * 3.6,
+				ppt->time, ppt->speed * 3.6,
+				pt->next->time, pt->next->speed * 3.6);
 	} else {
 		double d = earth_distance(&ppt->loc, &pt->loc);
 		time_t t = gpxtime2sec(pt->time) - gpxtime2sec(ppt->time);
 		if (t < 1)
 			t = 1;
 		pt->speed = d / (double)t;
-		fprintf(stderr, "speed: calculated %5.2f kph from %s to %s: %.2f m, %ld sec, "
-			"PDOP %.1f\n",
-			3.6 * pt->speed,
-			ppt->time, pt->time,
-			d, (long)t,
-			pt->flags & GPX_PT_PDOP ? pt->pdop : 99.);
+		if (verbose)
+			fprintf(stderr, "speed: calculated %5.2f kph from %s to %s: %.2f m, %ld sec, "
+				"PDOP %.1f\n",
+				3.6 * pt->speed,
+				ppt->time, pt->time,
+				d, (long)t,
+				pt->flags & GPX_PT_PDOP ? pt->pdop : 99.);
 	}
 }
 
