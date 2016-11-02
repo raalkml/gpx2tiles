@@ -402,7 +402,7 @@ int main(int argc, char *argv[])
 	struct timespec start, end, duration;
 	struct gpx_file *gf;
 	struct gpx_file *files = NULL, **files_tail = &files;
-	int points_cnt = 0, files_cnt = 0;
+	int points_cnt, files_cnt = 0;
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
 	int parallel = 4;
 	pthread_t *loaders;
@@ -534,11 +534,14 @@ int main(int argc, char *argv[])
 	}
 	free(load_q);
 	free(loaders);
+	points_cnt = 0;
 	for (gf = files; gf; gf = gf->next)
 		points_cnt += gf->gpx->points_cnt;
 	duration = timespec_sub(end, start);
 	fprintf(stderr, "%d files, %d points, %ld.%09ld sec\n", files_cnt, points_cnt,
 	       duration.tv_sec, duration.tv_nsec);
+	if (!points_cnt)
+		exit(0);
 	// dump_points(files);
 
 	if (cd_to != -1 && fchdir(cd_to) == -1) {
