@@ -61,9 +61,13 @@ static inline void dump_points(struct gpx_file *f)
 static inline void dump_zoom_level(int z)
 {
 	int len = 0, h;
+
 	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
 		struct tile *tile;
-		for (tile = zoom_levels[z].tiles[h]; tile; tile = tile->next) {
+
+		for (tile = zoom_levels[z].tiles[h].head;
+		     tile;
+		     tile = tile->next) {
 			len += printf(" %d/%d (%d)",
 				      tile->xy.x, tile->xy.y,
 				      tile->point_cnt);

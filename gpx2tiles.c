@@ -11,6 +11,7 @@
 #include <getopt.h>
 #include <pthread.h>
 #include <gd.h>
+#include "slist.h"
 #include "gpx.h"
 #include "tstime.h"
 #include "slippy-map.h"
@@ -113,7 +114,7 @@ struct tile {
 
 #define ZOOM_TILE_HASH_SIZE (256u)
 struct zoom_level {
-	struct tile *tiles[ZOOM_TILE_HASH_SIZE];
+	slist_stack_declare(struct tile, tiles[ZOOM_TILE_HASH_SIZE]);
 	double xunit, yunit;
 	int tile_cnt;
 };
@@ -128,7 +129,7 @@ static inline unsigned hash_xy(const struct xy *xy)
 static struct tile *find_tile(const struct xy *xy, int zoom)
 {
 	struct tile *tile = zoom_min <= zoom && zoom <= zoom_max ?
-		zoom_levels[zoom].tiles[hash_xy(xy)] : NULL;
+		zoom_levels[zoom].tiles[hash_xy(xy)].head : NULL;
 
 	for (; tile; tile = tile->next)
 		if (tile->xy.x == xy->x && tile->xy.y == xy->y)
@@ -136,7 +137,7 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 	return tile;
 }
 
-static struct tile *free_tiles;
+static slist_stack_define(struct tile, free_tiles);
 
 static struct tile *create_tile(const struct xy *xy, int z)
 {
@@ -146,9 +147,8 @@ static struct tile *create_tile(const struct xy *xy, int z)
 		unsigned h = hash_xy(xy);
 		const int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
 	
-		if (free_tiles) {
-			tile = free_tiles;
-			free_tiles = free_tiles->next;
+		if (free_tiles.head) {
+			tile = slist_stack_pop(&free_tiles);
 			gdImageFilledRectangle(tile->img, 0, 0, 256, 256, 0);
 		} else {
 			tile = malloc(sizeof(*tile));
@@ -162,16 +162,14 @@ static struct tile *create_tile(const struct xy *xy, int z)
 		tile->loc.lon = tilex2long(xy->x, z);
 		tile->point_cnt = 0;
 
-		tile->next = zoom_levels[z].tiles[h];
-		zoom_levels[z].tiles[h] = tile;
+		slist_push(&zoom_levels[z].tiles[h], tile);
 		zoom_levels[z].tile_cnt++;
 	}
 	return tile;
 }
 static void destroy_tile(struct tile *tile)
 {
-	tile->next = free_tiles;
-	free_tiles = tile;
+	slist_push(&free_tiles, tile);
 }
 
 static struct tile *get_tile(const struct xy *xy, int z)
@@ -200,16 +198,9 @@ static void free_zoom_level(int z)
 	unsigned int h;
 
 	zl->tile_cnt = 0;
-	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
-		struct tile *tile = zl->tiles[h];
-
-		zl->tiles[h] = NULL;
-		while (tile) {
-			struct tile *next = tile->next;
-			destroy_tile(tile);
-			tile = next;
-		}
-	}
+	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h)
+		while (zl->tiles[h].head)
+			destroy_tile(slist_stack_pop(&zl->tiles[h]));
 }
 
 static const int spdclr[] = {
@@ -318,16 +309,24 @@ static void make_tiles(struct gpx_file *files, int z)
 static inline void save_zoom_level(int z)
 {
 	int len = 0, h;
+
 	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
 		struct tile *tile;
-		for (tile = zoom_levels[z].tiles[h]; tile; tile = tile->next) {
+
+		for (tile = zoom_levels[z].tiles[h].head;
+		     tile;
+		     tile = tile->next) {
 			char path[128];
+
 			snprintf(path, sizeof(path), "%d", z);
 			mkdir(path, 0775);
 			snprintf(path, sizeof(path), "%d/%d", z, tile->xy.x);
 			mkdir(path, 0775);
-			snprintf(path, sizeof(path), "%d/%d/%d.png", z, tile->xy.x, tile->xy.y);
+			snprintf(path, sizeof(path), "%d/%d/%d.png", z,
+				 tile->xy.x, tile->xy.y);
+
 			FILE *fp = fopen(path, "wb");
+
 			if (fp) {
 				gdImagePngEx(tile->img, fp, 4);
 				fclose(fp);
@@ -360,7 +359,8 @@ struct load
 
 static pthread_mutex_t load_q_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t load_q_cond = PTHREAD_COND_INITIALIZER;
-static struct load *load_q, **load_q_tail = &load_q, *load_free;
+static slist_define(struct load, load_q);
+static slist_stack_define(struct load, load_free);
 
 static void *loader(void *arg)
 {
@@ -369,21 +369,17 @@ static void *loader(void *arg)
 	while (1) {
 		pthread_mutex_lock(&load_q_lock);
 		if (lq) {
-			lq->next = load_free;
-			load_free = lq;
+			slist_push(&load_free, lq);
 			lq = NULL;
 		}
-		if (!load_q)
+		if (slist_empty(&load_q))
 			pthread_cond_wait(&load_q_cond, &load_q_lock);
-		if (load_q) {
-			if (!load_q->gf) {
+		if (load_q.head) {
+			if (!load_q.head->gf) {
 				pthread_mutex_unlock(&load_q_lock);
 				pthread_exit(NULL);
 			}
-			lq = load_q;
-			load_q = load_q->next;
-			if (!load_q)
-				load_q_tail = &load_q;
+			lq = slist_pop(&load_q);
 		}
 		pthread_mutex_unlock(&load_q_lock);
 		if (!lq)
@@ -401,7 +397,7 @@ int main(int argc, char *argv[])
 	int cd_to = -1;
 	struct timespec start, end, duration;
 	struct gpx_file *gf;
-	struct gpx_file *files = NULL, **files_tail = &files;
+	slist_define(struct gpx_file, files);
 	int points_cnt, files_cnt = 0;
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
 	int parallel = 4;
@@ -436,8 +432,6 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "%s [-z] [--] [gpx files...]\n", argv[0]);
 			exit(1);
 		}
-	if (!opt)
-		exit(2);
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	struct load *lq;
 	for (; optind < argc; ++optind) {
@@ -448,10 +442,8 @@ int main(int argc, char *argv[])
 		lq->gf->next = NULL;
 		lq->gf->gpx = NULL;
 		++files_cnt;
-		*files_tail = lq->gf;
-		files_tail = &lq->gf->next;
-		*load_q_tail = lq;
-		load_q_tail = &lq->next;
+		slist_append(&files, lq->gf);
+		slist_append(&load_q, lq);
 	}
 	if (parallel < 1)
 		parallel = 1;
@@ -473,22 +465,16 @@ int main(int argc, char *argv[])
 				len = strnlen(buf + pos, rd - pos);
 				if (pos + len < off + rd) {
 					pthread_mutex_lock(&load_q_lock);
-					if (!load_free)
+					if (load_free.head)
+						lq = slist_stack_pop(&load_free);
+					else
 						lq = malloc(sizeof(*lq));
-					else {
-						lq = load_free;
-						load_free = load_free->next;
-					}
 					lq->path = buf + pos;
 					lq->next = NULL;
 					lq->gf = calloc(1, sizeof(*lq->gf));
-					lq->gf->next = NULL;
-					lq->gf->gpx = NULL;
 					++files_cnt;
-					*files_tail = lq->gf;
-					files_tail = &lq->gf->next;
-					*load_q_tail = lq;
-					load_q_tail = &lq->next;
+					slist_append(&files, lq->gf);
+					slist_append(&load_q, lq);
 					pthread_cond_broadcast(&load_q_cond);
 					pthread_mutex_unlock(&load_q_lock);
 					pos += len + 1;
@@ -509,7 +495,7 @@ int main(int argc, char *argv[])
 			while (1) {
 				int done;
 				pthread_mutex_lock(&load_q_lock);
-				done = load_q == NULL;
+				done = slist_empty(&load_q);
 				pthread_mutex_unlock(&load_q_lock);
 				if (done)
 					break;
@@ -520,46 +506,47 @@ int main(int argc, char *argv[])
 	/* loader queue terminator */
 	lq = calloc(1, sizeof(*lq));
 	pthread_mutex_lock(&load_q_lock);
-	*load_q_tail = lq;
-	load_q_tail = &lq->next;
+	slist_append(&load_q, lq);
 	pthread_cond_broadcast(&load_q_cond);
 	pthread_mutex_unlock(&load_q_lock);
 	for (opt = 0; opt < parallel; ++opt)
 		pthread_join(loaders[opt], NULL);
 	clock_gettime(CLOCK_MONOTONIC, &end);
-	while (load_free) {
-		lq = load_free;
-		load_free = load_free->next;
-		free(lq);
-	}
-	free(load_q);
+	while (load_free.head)
+		free(slist_stack_pop(&load_free));
+	free(slist_pop(&load_q));
 	free(loaders);
 	points_cnt = 0;
-	for (gf = files; gf; gf = gf->next)
+	for (gf = files.head; gf; gf = gf->next)
 		points_cnt += gf->gpx->points_cnt;
 	duration = timespec_sub(end, start);
-	fprintf(stderr, "%d files, %d points, %ld.%09ld sec\n", files_cnt, points_cnt,
+	fprintf(stderr, "%d files, %d points, -j%d, %ld.%09ld sec\n",
+		files_cnt, points_cnt, parallel,
 	       duration.tv_sec, duration.tv_nsec);
 	if (!points_cnt)
 		exit(0);
-	// dump_points(files);
+
+	if (verbose > 2)
+		dump_points(files.head);
 
 	if (cd_to != -1 && fchdir(cd_to) == -1) {
 		perror("chdir");
 		exit(2);
 	}
+
 	int z;
 
 	prepare_zoom_levels();
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	for (z = zoom_min; z <= zoom_max; ++z) {
 		printf("z %d ", z); fflush(stdout);
-		make_tiles(files, z);
+		make_tiles(files.head, z);
 		printf("(%d tiles, dx %f dy %f)%s", zoom_levels[z].tile_cnt,
 		       zoom_levels[z].xunit, zoom_levels[z].yunit,
 		       verbose ? "\n" : "");
 		fflush(stdout);
-		// dump_zoom_level(z);
+		if (verbose > 2)
+			dump_zoom_level(z);
 		save_zoom_level(z);
 		free_zoom_level(z);
 		if (!verbose)
@@ -569,19 +556,16 @@ int main(int argc, char *argv[])
 	duration = timespec_sub(end, start);
 	fprintf(stderr, "z %d-%d processed in %ld.%09ld\n",
 		zoom_min, zoom_max, duration.tv_sec, duration.tv_nsec);
-	for (gf = files; gf;) {
-		struct gpx_file *next = gf->next;
-
+	while (files.head) {
+		gf = slist_pop(&files);
 		gpx_free(gf->gpx);
 		free(gf);
-		gf = next;
 	}
 	free(zoom_levels);
-	while (free_tiles) {
-		struct tile *next = free_tiles->next;
-		gdImageDestroy(free_tiles->img);
-		free(free_tiles);
-		free_tiles = next;
+	while (free_tiles.head) {
+		struct tile *t = slist_stack_pop(&free_tiles);
+		gdImageDestroy(t->img);
+		free(t);
 	}
 	return 0;
 }

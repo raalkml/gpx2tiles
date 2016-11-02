@@ -7,10 +7,14 @@
 } while(0)
 
 #define slist_declare(type, list) struct { type *head, **tail; } list
+#define slist_stack_declare(type, list) struct { type *head; } list
 #define slist_initializer(list) { .head = NULL, .tail = &(list)->head }
+#define slist_stack_initializer(list) { .head = NULL }
 
 #define slist_define(type, list) \
 	slist_declare(type, list) = slist_initializer(&list)
+#define slist_stack_define(type, list) \
+	slist_stack_declare(type, list) = slist_stack_initializer(&list)
 
 #define slist_empty(list) (!(list)->head)
 
@@ -31,6 +35,12 @@
 	(list)->head = __head->next; \
 	if (!__head->next) \
 		(list)->tail = &(list)->head; \
+	__head; \
+})
+
+#define slist_stack_pop(list) ({ \
+	typeof(*(list)->head) *__head = (list)->head; \
+	(list)->head = __head->next; \
 	__head; \
 })
 
