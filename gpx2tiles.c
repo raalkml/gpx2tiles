@@ -1,4 +1,6 @@
+#define _GNU_SOURCE
 #include <unistd.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <math.h>
@@ -337,7 +339,7 @@ static inline void save_zoom_level(int z)
 
 int main(int argc, char *argv[])
 {
-	const char *cd_to = NULL;
+	int cd_to = -1;
 	struct timespec start, end, duration;
 	struct gpx_file *gf;
 	struct gpx_file *files = NULL, **files_tail = &files;
@@ -351,7 +353,11 @@ int main(int argc, char *argv[])
 			stdin_files = 1;
 			break;
 		case 'C':
-			cd_to = optarg;
+			cd_to = open(optarg, O_DIRECTORY | O_PATH | O_CLOEXEC);
+			if (cd_to < 0) {
+				perror(optarg);
+				exit(2);
+			}
 			break;
 		case 'z':
 			zoom_min = strtol(optarg, NULL, 0);
@@ -412,8 +418,8 @@ int main(int argc, char *argv[])
 	       duration.tv_sec, duration.tv_nsec);
 	// dump_points(files);
 
-	if (cd_to && chdir(cd_to) == -1) {
-		perror(cd_to);
+	if (cd_to != -1 && fchdir(cd_to) == -1) {
+		perror("chdir");
 		exit(2);
 	}
 	int z;
