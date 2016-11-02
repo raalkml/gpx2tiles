@@ -22,11 +22,14 @@ static inline void dump_points(struct gpx_file *f)
 		int nseg;
 		printf("From %s (%d)\n", f->gpx->path, f->gpx->points_cnt);
 
-		for (seg = f->gpx->segments, nseg = 0; seg; ++nseg, seg = seg->next) {
+		for (seg = f->gpx->segments.head, nseg = 0;
+		     seg;
+		     ++nseg, seg = seg->next) {
 			const struct gpx_point *pt;
 
-			for (pt = seg->points; pt; pt = pt->next) {
-				printf(" %d: %f,%f %s\n", nseg, pt->loc.lat, pt->loc.lon, pt->time);
+			for (pt = seg->points.head; pt; pt = pt->next) {
+				printf(" %d: %f,%f %s\n",
+				       nseg, pt->loc.lat, pt->loc.lon, pt->time);
 				int z, len = 0;
 				for (z = 1; z <= 18; ++z) {
 					struct xy tile = get_tile_xy(&pt->loc, z);

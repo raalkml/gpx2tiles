@@ -13,7 +13,7 @@ struct gpx_data
 	char *path;
 	char time[24];
 
-	struct gpx_segment *segments, **segments_tail;
+	struct { struct gpx_segment *head, **tail; } segments;
 	int points_cnt, track_cnt;
 };
 
@@ -23,7 +23,7 @@ struct gpx_segment
 {
 	struct gpx_segment *next;
 
-	struct gpx_point *points, **points_tail;
+	struct { struct gpx_point *head, **tail; } points;
 };
 
 #define GPX_PT_LATLON  (1 << 0)

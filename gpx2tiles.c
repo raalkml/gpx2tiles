@@ -310,8 +310,8 @@ static void make_tiles(struct gpx_file *files, int z)
 	for (f = files; f; f = f->next) {
 		struct gpx_segment *seg;
 
-		for (seg = f->gpx->segments; seg; seg = seg->next)
-			draw_track_points(seg->points, z);
+		for (seg = f->gpx->segments.head; seg; seg = seg->next)
+			draw_track_points(seg->points.head, z);
 	}
 }
 

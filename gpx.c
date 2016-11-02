@@ -5,6 +5,7 @@
 #include <math.h>
 #include <time.h>
 #include <libxml/parser.h>
+#include "slist.h"
 #include "gpx.h"
 
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
@@ -21,17 +22,6 @@ static inline size_t strlcpy(char* tgt, const char* src, size_t size)
 	}
 	return r;
 }
-
-#define slist_init(p, field) do { \
-	(p)->field = NULL; \
-	(p)->field ## _tail = &(p)->field; \
-} while(0)
-#define slist_append(p, field, i) do { \
-	typeof(*(p)->field) **__tail = (p)->field ## _tail; \
-	(i)->next = NULL; \
-	(p)->field ## _tail = &(i)->next; \
-	*__tail = i; \
-} while(0)
 
 /*
 const char GPX_SRC_GPS[] = "gps";
@@ -57,7 +47,7 @@ void free_trk_point(struct gpx_point *pt)
 
 void put_trk_point(struct gpx_segment *seg, struct gpx_point *pt)
 {
-	slist_append(seg, points, pt);
+	slist_append(&seg->points, pt);
 }
 
 void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
@@ -140,13 +130,14 @@ double earth_distance(const struct gpx_latlon *latlng1,
 
 static time_t gpxtime2sec(const char *t)
 {
+	char *p;
 	struct tm tm;
 	time_t utc = time(NULL);
+
 	tm = *gmtime(&utc);
-	char *p = strptime(t, "%Y-%m-%dT%H:%M:%S", &tm);
-	if (p) {
+	p = strptime(t, "%Y-%m-%dT%H:%M:%S", &tm);
+	if (p)
 		return mktime(&tm);
-	}
 	return utc;
 }
 
@@ -217,7 +208,7 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 		free_trk_point(pt);
 	}
 	if (seg) {
-		struct gpx_point *pt = seg->points;
+		struct gpx_point *pt = seg->points.head;
 		struct gpx_point *ppt = NULL;
 
 		for (; synspeed && pt; ppt = pt, pt = pt->next)
@@ -233,15 +224,14 @@ struct gpx_segment *new_trk_segment(void)
 	struct gpx_segment *seg = malloc(sizeof(*seg));
 
 	seg->next = NULL;
-	slist_init(seg, points);
+	slist_init(&seg->points);
 	return seg;
 }
 
 void free_trk_segment(struct gpx_segment *seg)
 {
-	while (seg->points) {
-		struct gpx_point *pt = seg->points;
-		seg->points = seg->points->next;
+	while (seg->points.head) {
+		struct gpx_point *pt = slist_pop(&seg->points);
 		free_trk_point(pt);
 	}
 	free(seg);
@@ -249,22 +239,21 @@ void free_trk_segment(struct gpx_segment *seg)
 
 void put_trk_segment(struct gpx_data *gpx, struct gpx_segment *seg)
 {
-	slist_append(gpx, segments, seg);
+	slist_append(&gpx->segments, seg);
 }
 
 struct gpx_data *gpx_read_file(const char *path)
 {
 	xmlNode *xe;
 	xmlDoc *xml;
-	//int ntrk = 0;
-	struct gpx_data *gpxf = malloc(sizeof(*gpxf));
+	struct gpx_data *gpx = malloc(sizeof(*gpx));
 
-	gpxf->path = strdup(path);
-	gpxf->points_cnt = 0;
-	slist_init(gpxf, segments);
-	memset(gpxf->time, 0, sizeof(gpxf->time));
+	gpx->path = strdup(path);
+	gpx->points_cnt = 0;
+	slist_init(&gpx->segments);
+	memset(gpx->time, 0, sizeof(gpx->time));
 
-	xml = xmlReadFile(gpxf->path,
+	xml = xmlReadFile(gpx->path,
 			  NULL /* encoding */,
 			  XML_PARSE_RECOVER |
 			  XML_PARSE_NOERROR |
@@ -272,16 +261,15 @@ struct gpx_data *gpx_read_file(const char *path)
 			  XML_PARSE_NONET |
 			  XML_PARSE_NOXINCNODE);
 	if (!xml)
-		return gpxf;
+		return gpx;
 
 	for (xe = xmlFirstElementChild(xmlDocGetRootElement(xml)); xe;
 	     xe = xmlNextElementSibling(xe)) {
 		xmlNode *seg;
-		//int nseg = 0;
 
 		if (xmlStrcasecmp(xe->name, BAD_CAST "time") == 0) {
 			xmlChar *s = xmlNodeGetContent(xe);
-			strlcpy(gpxf->time, ASCII s, sizeof(gpxf->time));
+			strlcpy(gpx->time, ASCII s, sizeof(gpx->time));
 			xmlFree(s);
 			continue;
 		}
@@ -295,21 +283,18 @@ struct gpx_data *gpx_read_file(const char *path)
 		     seg = xmlNextElementSibling(seg)) {
 			if (xmlStrcasecmp(seg->name, BAD_CAST "trkseg") != 0)
 				continue;
-			gpxf->points_cnt += process_trk_points(gpxf,
-				xmlFirstElementChild(seg) /* , ntrk, nseg */);
-			//++nseg;
+			gpx->points_cnt += process_trk_points(gpx,
+				xmlFirstElementChild(seg));
 		}
-		//++ntrk;
 	}
 	xmlFreeDoc(xml);
-	return gpxf;
+	return gpx;
 }
 
 void gpx_free(struct gpx_data *gpx)
 {
-	while (gpx->segments) {
-		struct gpx_segment *seg = gpx->segments;
-		gpx->segments = gpx->segments->next;
+	while (gpx->segments.head) {
+		struct gpx_segment *seg = slist_pop(&gpx->segments);
 		free_trk_segment(seg);
 	}
 	free(gpx->path);
