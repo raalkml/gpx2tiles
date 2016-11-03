@@ -26,6 +26,7 @@ int verbose;
 
 /* Do not draw lines at zoom levels below Z_NO_LINES */
 #define Z_NO_LINES 7
+static int z_max_tiles = INT_MAX;
 
 struct xy
 {
@@ -106,6 +107,7 @@ struct gpx_file
 
 struct tile {
 	struct tile *next;
+	int refcnt;
 	struct xy xy;
 	struct gpx_latlon loc;
 	int point_cnt;
@@ -116,7 +118,7 @@ struct tile {
 struct zoom_level {
 	slist_stack_declare(struct tile, tiles[ZOOM_TILE_HASH_SIZE]);
 	double xunit, yunit;
-	int tile_cnt;
+	int tile_cnt, image_cnt;
 };
 
 static struct zoom_level *zoom_levels; /* goes from 0 to zoom_max */
@@ -139,47 +141,143 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 }
 
 static slist_stack_define(struct tile, free_tiles);
+#define GD_ANTIALIAS_COLOR (gdTrueColorAlpha(0, 255, 0, 0))
 
-static struct tile *create_tile(const struct xy *xy, int z)
+static struct tile *alloc_tile(const struct xy *xy, int z)
 {
 	struct tile *tile = NULL;
 
 	if (zoom_min <= z && z <= zoom_max) {
-		unsigned h = hash_xy(xy);
 		const int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
+		unsigned h = hash_xy(xy);
 	
-		if (free_tiles.head) {
-			tile = slist_stack_pop(&free_tiles);
-			gdImageFilledRectangle(tile->img, 0, 0, 256, 256, 0);
-		} else {
+		if (!free_tiles.head) {
 			tile = malloc(sizeof(*tile));
-			tile->img = gdImageCreateTrueColor(256, 256);;
-			gdImageColorTransparent(tile->img, transparent);
-			gdImageSetAntiAliased(tile->img, gdTrueColorAlpha(0, 255, 0, 0));
+			tile->img = NULL;
+		} else {
+			tile = slist_stack_pop(&free_tiles);
+			if (tile->img) {
+				gdImageFilledRectangle(tile->img, 0, 0, 256, 256, 0);
+				gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
+				zoom_levels[z].image_cnt++;
+			}
 		}
-		gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
 		tile->xy = *xy;
 		tile->loc.lat = tiley2lat(xy->y, z);
 		tile->loc.lon = tilex2long(xy->x, z);
 		tile->point_cnt = 0;
-
+		tile->refcnt = 0;
 		slist_push(&zoom_levels[z].tiles[h], tile);
 		zoom_levels[z].tile_cnt++;
 	}
 	return tile;
 }
-static void destroy_tile(struct tile *tile)
+static void free_tile(struct tile *tile)
 {
 	slist_push(&free_tiles, tile);
 }
 
-static struct tile *get_tile(const struct xy *xy, int z)
+static struct tile *get_tile_at(const struct xy *xy, int z)
 {
 	struct tile *tile = find_tile(xy, z);
 
 	if (!tile)
-		tile = create_tile(xy, z);
+		tile = alloc_tile(xy, z);
 	return tile;
+}
+
+static char *get_tile_png_path(char *path, size_t maxlen, const struct xy *xy, int z)
+{
+	snprintf(path, maxlen, "%d/%d/%d.png", z, xy->x, xy->y);
+	return path;
+}
+
+static struct tile *open_tile(struct tile *tile, int z)
+{
+	tile->refcnt++;
+	if (tile->img)
+		return tile;
+
+	const int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
+	FILE *fp;
+	char path[128];
+
+	get_tile_png_path(path, sizeof(path), &tile->xy, z);
+	fp = fopen(path, "rb");
+	if (fp) {
+		tile->img = gdImageCreateFromPng(fp);
+		if (tile->img) {
+			gdImageColorTransparent(tile->img, transparent);
+			zoom_levels[z].image_cnt++;
+		}
+		fclose(fp);
+	}
+	if (!tile->img) {
+		tile->img = gdImageCreateTrueColor(256, 256);
+		gdImageColorTransparent(tile->img, transparent);
+		gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
+		zoom_levels[z].image_cnt++;
+	}
+	gdImageSetAntiAliased(tile->img, GD_ANTIALIAS_COLOR);
+	return tile;
+}
+
+static void flush_tile(struct tile *tile, int z, int verbosity)
+{
+	char path[128];
+	FILE *fp;
+
+	get_tile_png_path(path, sizeof(path), &tile->xy, z);
+	fp = fopen(path, "wb");
+	if (!fp) {
+		snprintf(path, sizeof(path), "%d", z);
+		mkdir(path, 0775);
+		snprintf(path, sizeof(path), "%d/%d", z, tile->xy.x);
+		mkdir(path, 0775);
+		get_tile_png_path(path, sizeof(path), &tile->xy, z);
+		fp = fopen(path, "wb");
+	}
+	if (fp) {
+		gdImagePngEx(tile->img, fp, 4);
+		fclose(fp);
+		gdImageDestroy(tile->img);
+		tile->img = NULL;
+		zoom_levels[z].image_cnt--;
+		if (verbosity)
+			printf("z %d %d/%d (%d)\n", z,
+			       tile->xy.x, tile->xy.y, tile->point_cnt);
+	}
+}
+
+static void close_tile(struct tile *tile, int z)
+{
+	if (tile->refcnt-- < 0)
+		fprintf(stderr, "Used closed tile %d,%d\n", tile->xy.x, tile->xy.y);
+
+	unsigned int h;
+	int need = zoom_levels[z].image_cnt - z_max_tiles;
+
+	while (need > 0) {
+		int flushed = 0;
+
+		for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
+			struct tile *tile, *last = NULL;
+
+			slist_for_each(tile, &zoom_levels[z].tiles[h])
+				if (tile->img && tile->refcnt == 0)
+					last = tile;
+			if (last) {
+				flush_tile(last, z, verbose);
+				++flushed;
+				if (--need <= 0)
+					break;
+			}
+		}
+		if (!flushed) {
+			fprintf(stderr, "z %d: %d needed\n", z, need);
+			break;
+		}
+	}
 }
 
 static void prepare_zoom_levels(void)
@@ -201,7 +299,7 @@ static void free_zoom_level(int z)
 	zl->tile_cnt = 0;
 	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h)
 		while (zl->tiles[h].head)
-			destroy_tile(slist_stack_pop(&zl->tiles[h]));
+			free_tile(slist_stack_pop(&zl->tiles[h]));
 }
 
 static const int spdclr[] = {
@@ -227,22 +325,26 @@ static void draw_track_points(struct gpx_point *points, int z)
 
 	for (pt = ppt = points; pt; ppt = pt, pt = pt->next) {
 		struct xy xy = get_tile_xy(&pt->loc, z);
-		struct tile *tile = get_tile(&xy, z);
+		struct tile *tile = get_tile_at(&xy, z);
 
 		if (!tile)
 			continue;
 
+		open_tile(tile, z);
 		tile->point_cnt++;
 		struct xy pix = getPixelPosForCoordinates(&pt->loc, z);
 		struct xy ppix = pix;
 		struct xy pxy = xy;
-		struct tile *ptile = tile;
+		struct tile *ptile;
 		int speed = 0;
 
-		if (ppt != pt) {
+		if (ppt == pt)
+			ptile = open_tile(tile, z);
+		else {
 			pxy = get_tile_xy(&ppt->loc, z);
-			ptile = get_tile(&pxy, z);
+			ptile = get_tile_at(&pxy, z);
 			ppix = getPixelPosForCoordinates(&ppt->loc, z);
+			open_tile(ptile, z);
 		}
 
 		if (pt->flags & GPX_PT_SPEED) {
@@ -262,7 +364,7 @@ static void draw_track_points(struct gpx_point *points, int z)
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
 		if (z < Z_NO_LINES)
-			continue;
+			goto close_tiles;
 
 		gdImageSetAntiAliased(tile->img, color);
 		if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
@@ -274,7 +376,7 @@ static void draw_track_points(struct gpx_point *points, int z)
 		if (tile == ptile) {
 			if (ppix.x != pix.x || ppix.y != pix.y)
 				gdImageLine(tile->img, pix.x, pix.y, ppix.x, ppix.y, color);
-			continue;
+			goto close_tiles;
 		}
 #if 0
 		if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
@@ -292,6 +394,9 @@ static void draw_track_points(struct gpx_point *points, int z)
 		int ppy = pix.y - (ptile->xy.y - tile->xy.y) * 256;
 
 		gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, color /*0x00006f*/);
+	close_tiles:
+		close_tile(ptile, z);
+		close_tile(tile, z);
 	}
 }
 
@@ -315,21 +420,8 @@ static inline void save_zoom_level(int z)
 		struct tile *tile;
 
 		slist_for_each(tile, &zoom_levels[z].tiles[h]) {
-			char path[128];
-
-			snprintf(path, sizeof(path), "%d", z);
-			mkdir(path, 0775);
-			snprintf(path, sizeof(path), "%d/%d", z, tile->xy.x);
-			mkdir(path, 0775);
-			snprintf(path, sizeof(path), "%d/%d/%d.png", z,
-				 tile->xy.x, tile->xy.y);
-
-			FILE *fp = fopen(path, "wb");
-
-			if (fp) {
-				gdImagePngEx(tile->img, fp, 4);
-				fclose(fp);
-			}
+			if (tile->img)
+				flush_tile(tile, z, 0);
 			if (!verbose)
 				continue;
 			if (!len)
@@ -403,7 +495,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:v")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -414,6 +506,11 @@ int main(int argc, char *argv[])
 				perror(optarg);
 				exit(2);
 			}
+			break;
+		case 'T':
+			z_max_tiles = strtol(optarg, NULL, 0);
+			if (z_max_tiles < 1)
+				z_max_tiles = 1;
 			break;
 		case 'z':
 			zoom_min = strtol(optarg, NULL, 0);
@@ -564,7 +661,8 @@ int main(int argc, char *argv[])
 	while (free_tiles.head) {
 		struct tile *t = slist_stack_pop(&free_tiles);
 
-		gdImageDestroy(t->img);
+		if (t->img)
+			gdImageDestroy(t->img);
 		free(t);
 	}
 	return 0;
