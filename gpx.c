@@ -197,6 +197,8 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 		parse_trkpt(xpt, pt);
 		if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME)
 			synspeed = 1;
+		if (!(pt->flags & GPX_PT_TIME))
+			sprintf(pt->time, "%d", ptcnt);
 		//pt->trk = trk;
 		//pt->seg = nseg;
 		if (!seg)
