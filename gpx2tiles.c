@@ -227,20 +227,26 @@ static struct tile *open_tile(struct tile *tile, int z)
 
 static void flush_tile(struct tile *tile, int z, int verbosity)
 {
-	char path[128];
+	char path[PATH_MAX], *p;
 	FILE *fp;
 
 	get_tile_png_path(path, sizeof(path), &tile->xy, z);
+	strcat(path, ".tmp");
 	fp = fopen(path, "wb");
 	if (!fp) {
-		snprintf(path, sizeof(path), "%d", z);
+		p = strchr(path, '/');
+		*p = '\0';
 		mkdir(path, 0775);
-		snprintf(path, sizeof(path), "%d/%d", z, tile->xy.x);
+		*p = '/';
+		p = strchr(p + 1, '/');
+		*p = '\0';
 		mkdir(path, 0775);
-		get_tile_png_path(path, sizeof(path), &tile->xy, z);
+		*p = '/';
 		fp = fopen(path, "wb");
 	}
-	if (fp) {
+	if (!fp)
+		perror(path);
+	else {
 		gdImagePngEx(tile->img, fp, 4);
 		fclose(fp);
 		gdImageDestroy(tile->img);
@@ -250,6 +256,11 @@ static void flush_tile(struct tile *tile, int z, int verbosity)
 			printf("z %d %d/%d (%d)\n", z,
 			       tile->xy.x, tile->xy.y, tile->point_cnt);
 	}
+	p = strdup(path);
+	path[strlen(path) - 4] = '\0';
+	if (rename(p, path) < 0)
+		perror(p);
+	free(p);
 }
 
 static void close_tile(struct tile *tile, int z)
