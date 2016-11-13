@@ -32,8 +32,8 @@ static int drop_shadows; /* draw diagnostic shadows */
 #define HIGHLIGHT (0xff00ef)
 static int highlight_tile_cross; /* use different color to highlight crossing a tile */
 
-/* Do not draw lines at zoom levels below Z_NO_LINES */
-#define Z_NO_LINES 7
+/* Do not draw lines at zoom levels below z_no_lines */
+static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
 
 struct xy
@@ -386,7 +386,7 @@ static void draw_track_points(struct gpx_point *points, int z)
 
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
-		if (z < Z_NO_LINES)
+		if (z < z_no_lines)
 			goto close_tiles;
 
 		gdImageSetAntiAliased(tile->img, color);
@@ -564,7 +564,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -583,6 +583,9 @@ int main(int argc, char *argv[])
 			z_max_tiles = strtol(optarg, NULL, 0);
 			if (z_max_tiles < 1)
 				z_max_tiles = 1;
+			break;
+		case 'L':
+			z_no_lines = strtol(optarg, NULL, 0);
 			break;
 		case 'z':
 			zoom_min = strtol(optarg, NULL, 0);
