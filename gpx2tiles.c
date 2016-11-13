@@ -18,7 +18,7 @@
 #include "slippy-map.h"
 
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
-#define intmod(a) ({int __a = (a); __a < 0 ? -__a : __a;})
+#define nabs(a) ({int __a = (a); __a < 0 ? -__a : __a;})
 
 static int zoom_min = 1, zoom_max = 18;
 
@@ -26,6 +26,11 @@ extern int verbose;
 int verbose;
 
 static int reinitialize; /* don't update the tiles, redraw them from scratch */
+
+#define SHADOW (0xc0c0c0)
+static int drop_shadows; /* draw diagnostic shadows */
+#define HIGHLIGHT (0xff00ef)
+static int highlight_tile_cross; /* use different color to highlight crossing a tile */
 
 /* Do not draw lines at zoom levels below Z_NO_LINES */
 #define Z_NO_LINES 7
@@ -218,7 +223,11 @@ static struct tile *open_tile(struct tile *tile, int z)
 	if (!tile->img) {
 		tile->img = gdImageCreateTrueColor(256, 256);
 		gdImageColorTransparent(tile->img, transparent);
-		gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
+		gdImageFilledRectangle(tile->img, -1, -1, 256, 256, transparent);
+		if (drop_shadows) {
+			gdImageLine(tile->img, 0, 255, 255, 255, SHADOW);
+			gdImageLine(tile->img, 255, 0, 255, 255, SHADOW);
+		}
 		zoom_levels[z].image_cnt++;
 	}
 	gdImageSetAntiAliased(tile->img, GD_ANTIALIAS_COLOR);
@@ -387,27 +396,40 @@ static void draw_track_points(struct gpx_point *points, int z)
 			gdImageEllipse(tile->img, pix.x, pix.y,
 				       d, d, (20 << 24) | color);
 		}
+		else if (drop_shadows)
+			gdImageEllipse(tile->img, pix.x, pix.y,
+				       5, 5, (20 << 24) | SHADOW);
 		if (tile == ptile) {
 			if (ppix.x != pix.x || ppix.y != pix.y)
 				gdImageLine(tile->img, pix.x, pix.y, ppix.x, ppix.y, color);
 			goto close_tiles;
 		}
-#if 0
-		if (intmod(tile->xy.x - ptile->xy.x) > 1 || intmod(tile->xy.y - ptile->xy.y) > 1)
-			printf("\nz %d %s and %s far apart: dx=%d, dy=%d\n\n",
-			       z, pt->time, ppt->time,
-			       tile->xy.x - ptile->xy.x,
-			       tile->xy.y - ptile->xy.y);
-#endif
-		int px = ppix.x - (tile->xy.x - ptile->xy.x) * 256;
-		int py = ppix.y - (tile->xy.y - ptile->xy.y) * 256;
+		const int dx = tile->xy.x - ptile->xy.x;
+		const int dy = tile->xy.y - ptile->xy.y;
+		int x, y;
+		for (x = ptile->xy.x; ; x += dx > 0 ? 1: -1) {
+			for (y = ptile->xy.y; ; y += dy > 0 ? 1 : -1) {
+				int x1 = ppix.x - 256 * (x - ptile->xy.x);
+				int y1 = ppix.y - 256 * (y - ptile->xy.y);
+				int x2 = pix.x - 256 * (x - tile->xy.x);
+				int y2 = pix.y - 256 * (y - tile->xy.y);
 
-		gdImageLine(tile->img, px, py, pix.x, pix.y, color /*0xff00ef*/);
-
-		int ppx = pix.x - (ptile->xy.x -tile->xy.x) * 256;
-		int ppy = pix.y - (ptile->xy.y - tile->xy.y) * 256;
-
-		gdImageLine(ptile->img, ppix.x, ppix.y, ppx, ppy, color /*0x00006f*/);
+				struct xy ixy = { .x = x, .y = y };
+				struct tile *itile = get_tile_at(&ixy, z);
+				open_tile(itile, z);
+				/*
+				printf("z %d %d,%d line (%d,%d, %d,%d)\n", z,
+				       x, y, x1, y1, x2, y2);
+				*/
+				gdImageLine(itile->img, x1, y1, x2, y2,
+					    highlight_tile_cross ? HIGHLIGHT : color);
+				close_tile(itile, z);
+				if (y == tile->xy.y)
+					break;
+			}
+			if (x == tile->xy.x)
+				break;
+		}
 	close_tiles:
 		close_tile(ptile, z);
 		close_tile(tile, z);
@@ -542,7 +564,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:I")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -567,6 +589,13 @@ int main(int argc, char *argv[])
 			break;
 		case 'Z':
 			zoom_max = strtol(optarg, NULL, 0);
+			break;
+		case 'd':
+			opt = strtol(optarg, NULL, 0);
+			if (opt & 0x01)
+				drop_shadows = 1;
+			if (opt & 0x02)
+				highlight_tile_cross = 1;
 			break;
 		case 'v':
 			++verbose;
