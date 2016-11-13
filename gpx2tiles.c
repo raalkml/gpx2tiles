@@ -119,7 +119,7 @@ struct tile {
 
 #define ZOOM_TILE_HASH_SIZE (256u)
 struct zoom_level {
-	slist_stack_declare(struct tile, tiles[ZOOM_TILE_HASH_SIZE]);
+	SLIST_STACK_DECLARE(struct tile, tiles[ZOOM_TILE_HASH_SIZE]);
 	double xunit, yunit;
 	int tile_cnt, image_cnt;
 };
@@ -143,7 +143,7 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 	return tile;
 }
 
-static slist_stack_define(struct tile, free_tiles);
+static SLIST_STACK_DEFINE(struct tile, free_tiles);
 #define GD_ANTIALIAS_COLOR (gdTrueColorAlpha(0, 255, 0, 0))
 
 static char *get_tile_png_path(char *path, size_t maxlen, const struct xy *xy, int z)
@@ -497,8 +497,8 @@ struct load
 
 static pthread_mutex_t load_q_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t load_q_cond = PTHREAD_COND_INITIALIZER;
-static slist_define(struct load, load_q);
-static slist_stack_define(struct load, load_free);
+static SLIST_DEFINE(struct load, load_q);
+static SLIST_STACK_DEFINE(struct load, load_free);
 
 static void *loader(void *arg)
 {
@@ -535,7 +535,7 @@ int main(int argc, char *argv[])
 	int cd_to = -1;
 	struct timespec start, end, duration;
 	struct gpx_file *gf;
-	slist_define(struct gpx_file, files);
+	SLIST_DEFINE(struct gpx_file, files);
 	int points_cnt, files_cnt = 0;
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
 	int parallel = 4;

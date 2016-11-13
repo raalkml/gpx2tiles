@@ -6,15 +6,15 @@
 	(list)->tail = &(list)->head; \
 } while(0)
 
-#define slist_declare(type, list) struct { type *head, **tail; } list
-#define slist_stack_declare(type, list) struct { type *head; } list
-#define slist_initializer(list) { .head = NULL, .tail = &(list)->head }
-#define slist_stack_initializer(list) { .head = NULL }
+#define SLIST_DECLARE(type, list) struct { type *head, **tail; } list
+#define SLIST_STACK_DECLARE(type, list) struct { type *head; } list
+#define SLIST_INITIALIZER(list) { .head = NULL, .tail = &(list)->head }
+#define SLIST_STACK_INITIALIZER(list) { .head = NULL }
 
-#define slist_define(type, list) \
-	slist_declare(type, list) = slist_initializer(&list)
-#define slist_stack_define(type, list) \
-	slist_stack_declare(type, list) = slist_stack_initializer(&list)
+#define SLIST_DEFINE(type, list) \
+	SLIST_DECLARE(type, list) = SLIST_INITIALIZER(&list)
+#define SLIST_STACK_DEFINE(type, list) \
+	SLIST_STACK_DECLARE(type, list) = SLIST_STACK_INITIALIZER(&list)
 
 #define slist_empty(list) (!(list)->head)
 
