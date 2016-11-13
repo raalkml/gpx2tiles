@@ -342,6 +342,38 @@ static const int spdclr[] = {
 	 *
 	 */
 };
+
+#define XY(_x, _y) (struct xy){.x = _x, .y = _y}
+
+/*
+ * This seems to a well known test for line segments intersection
+ * http://stackoverflow.com/a/16725715
+ */
+static int turn(struct xy p1, struct xy p2, struct xy p3)
+{
+	int a = p1.x; int b = p1.y;
+	int c = p2.x; int d = p2.y;
+	int e = p3.x; int f = p3.y;
+	int A = (f - b) * (c - a);
+	int B = (d - b) * (e - a);
+	return A > B? 1 : A < B ? -1 : 0;
+}
+
+static int intersects(struct xy p1, struct xy p2, struct xy p3, struct xy p4)
+{
+	return turn(p1, p3, p4) != turn(p2, p3, p4) && turn(p1, p2, p3) != turn(p1, p2, p4);
+}
+
+static int crossing_tile(int x1, int y1, int x2, int y2)
+{
+	if (intersects(XY(x1, y1), XY(x2, y2), XY(0, 0), XY(255, 0)) ||
+	    intersects(XY(x1, y1), XY(x2, y2), XY(0, 0), XY(0, 255)) ||
+	    intersects(XY(x1, y1), XY(x2, y2), XY(255, 0), XY(255, 255)) ||
+	    intersects(XY(x1, y1), XY(x2, y2), XY(0, 255), XY(255, 255)))
+		return 1;
+	return 0;
+}
+
 static void draw_track_points(struct gpx_point *points, int z)
 {
 	struct gpx_point *pt, *ppt;
@@ -414,16 +446,19 @@ static void draw_track_points(struct gpx_point *points, int z)
 				int x2 = pix.x - 256 * (x - tile->xy.x);
 				int y2 = pix.y - 256 * (y - tile->xy.y);
 
-				struct xy ixy = { .x = x, .y = y };
-				struct tile *itile = get_tile_at(&ixy, z);
-				open_tile(itile, z);
-				/*
-				printf("z %d %d,%d line (%d,%d, %d,%d)\n", z,
-				       x, y, x1, y1, x2, y2);
-				*/
-				gdImageLine(itile->img, x1, y1, x2, y2,
-					    highlight_tile_cross ? HIGHLIGHT : color);
-				close_tile(itile, z);
+				if (crossing_tile(x1, y1, x2, y2)) {
+					struct xy ixy = { .x = x, .y = y };
+					struct tile *itile = get_tile_at(&ixy, z);
+					open_tile(itile, z);
+					/*
+					printf("z %d %f,%f %d,%d line (%d,%d, %d,%d)\n", z,
+					       pt->loc.lat, pt->loc.lon,
+					       x, y, x1, y1, x2, y2);
+					*/
+					gdImageLine(itile->img, x1, y1, x2, y2,
+						    highlight_tile_cross ? HIGHLIGHT : color);
+					close_tile(itile, z);
+				}
 				if (y == tile->xy.y)
 					break;
 			}
