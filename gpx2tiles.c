@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 #include <getopt.h>
 #include <pthread.h>
 #include <gd.h>
@@ -23,6 +24,8 @@ static int zoom_min = 1, zoom_max = 18;
 
 extern int verbose;
 int verbose;
+
+static int reinitialize; /* don't update the tiles, redraw them from scratch */
 
 /* Do not draw lines at zoom levels below Z_NO_LINES */
 #define Z_NO_LINES 7
@@ -143,6 +146,12 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 static slist_stack_define(struct tile, free_tiles);
 #define GD_ANTIALIAS_COLOR (gdTrueColorAlpha(0, 255, 0, 0))
 
+static char *get_tile_png_path(char *path, size_t maxlen, const struct xy *xy, int z)
+{
+	snprintf(path, maxlen, "%d/%d/%d.png", z, xy->x, xy->y);
+	return path;
+}
+
 static struct tile *alloc_tile(const struct xy *xy, int z)
 {
 	struct tile *tile = NULL;
@@ -184,12 +193,6 @@ static struct tile *get_tile_at(const struct xy *xy, int z)
 	if (!tile)
 		tile = alloc_tile(xy, z);
 	return tile;
-}
-
-static char *get_tile_png_path(char *path, size_t maxlen, const struct xy *xy, int z)
-{
-	snprintf(path, maxlen, "%d/%d/%d.png", z, xy->x, xy->y);
-	return path;
 }
 
 static struct tile *open_tile(struct tile *tile, int z)
@@ -439,6 +442,39 @@ static inline void save_zoom_level(int z)
 		fputc('\n', stdout);
 }
 
+static void remove_tiles(int z)
+{
+	DIR *zdir;
+	struct dirent *ze;
+	char d[16];
+
+	snprintf(d, sizeof(d), "%d", z);
+	zdir = opendir(d);
+	if (!zdir)
+		return;
+	while ((ze = readdir(zdir))) {
+		if (ze->d_name[0] == '.')
+			continue;
+		int xdirfd = openat(dirfd(zdir), ze->d_name, O_DIRECTORY|O_RDONLY);
+		if (xdirfd != -1) {
+			DIR *xdir = fdopendir(xdirfd);
+			if (!xdir)
+				close(xdirfd);
+			else {
+				struct dirent *xe;
+				while ((xe = readdir(xdir))) {
+					if (xe->d_name[0] == '.')
+						continue;
+					unlinkat(dirfd(xdir), xe->d_name, 0);
+				}
+				closedir(xdir);
+			}
+		}
+		unlinkat(dirfd(zdir), ze->d_name, AT_REMOVEDIR);
+	}
+	closedir(zdir);
+}
+
 #include "dump.h"
 
 struct load
@@ -495,7 +531,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:I")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -506,6 +542,9 @@ int main(int argc, char *argv[])
 				perror(optarg);
 				exit(2);
 			}
+			break;
+		case 'I':
+			reinitialize = 1;
 			break;
 		case 'T':
 			z_max_tiles = strtol(optarg, NULL, 0);
@@ -619,9 +658,6 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "%d files, %d points, -j%d, %ld.%09ld sec\n",
 		files_cnt, points_cnt, parallel,
 	       duration.tv_sec, duration.tv_nsec);
-	if (!points_cnt)
-		exit(0);
-
 	if (verbose > 2)
 		dump_points(files.head);
 
@@ -631,6 +667,15 @@ int main(int argc, char *argv[])
 	}
 
 	int z;
+
+	if (reinitialize) {
+		fprintf(stderr, "Reinitializing zoom %d - %d\n",
+			zoom_min, zoom_max);
+		for (z = zoom_min; z <= zoom_max; ++z)
+			remove_tiles(z);
+	}
+	if (!points_cnt)
+		exit(0);
 
 	prepare_zoom_levels();
 	clock_gettime(CLOCK_MONOTONIC, &start);
