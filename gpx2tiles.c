@@ -587,6 +587,28 @@ static void *loader(void *arg)
 	}
 }
 
+static void usage(const char *argv0)
+{
+	fprintf(stderr,
+		"%s [-z <min-zoom>] [-Z <max-zoom>] [-C <output-dir>] "
+		"[-j <jobs>] [-T <max-tiles>] [-Ivh] [-L <line-zoom>] "
+		"( [--] [gpx files...] | -0 < file-list )\n"
+		"  -C <output-dir> directory to save the tiles to\n"
+		"  -I delete zoom directories before saving the tiles\n"
+		"  -T <max-tiles> max number of tiles to keep in memory\n"
+		"  -j <jobs> number of tracks to load in parallel\n"
+		"  -L <line-zoom> zoom level above which stop drawing lines (only dots)\n"
+		"  -0 read the list of GPX files from stdin, NUL-terminated\n"
+		"     The files given on command-line are processed first\n"
+		"  -z <min-zoom>/-Z <max-zoom> only generate tiles from <min-zoom> to <max-zoom>\n"
+		"     (by default the tiles are generated from 1 to 18)\n"
+		"  -v increase verbosity\n"
+		"  -d <mask> if bit0 set in <mask>, the generated tiles and track points are drawn\n"
+		"     with diagnostics information around them (lines)\n"
+		"  -h gives this message\n",
+		argv0);
+}
+
 int main(int argc, char *argv[])
 {
 	int cd_to = -1;
@@ -599,7 +621,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:h")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -642,9 +664,14 @@ int main(int argc, char *argv[])
 			parallel = strtol(optarg, NULL, 0);
 			break;
 		case '?':
-			fprintf(stderr, "%s [-z] [--] [gpx files...]\n", argv[0]);
+		case 'h':
+			usage(argv[0]);
 			exit(1);
 		}
+	if (argc == 1) {
+		usage(argv[0]);
+		exit(1);
+	}
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	struct load *lq;
 	for (; optind < argc; ++optind) {
