@@ -17,6 +17,7 @@ $(target): $(ofiles)
 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
 
 $(odir)/%.o: %.c
+	@mkdir -p '$(odir)'
 	$(COMPILE.c) $(OUTPUT_OPTION) $(CPPFLAGS) $(CFLAGS) $<
 
 rebuild: clean
@@ -35,6 +36,7 @@ tags:
 	ctags $(srcs) *.h
 
 $(odir)/%.d: %.c
+	@mkdir -p '$(odir)'
 	$(CC) -MM -o $@ $< $(CPPFLAGS)
 
 .PHONY: tags build rebuild depclean clean distclean install
