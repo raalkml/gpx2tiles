@@ -672,6 +672,12 @@ int main(int argc, char *argv[])
 		usage(argv[0]);
 		exit(1);
 	}
+	/*
+	 * Extend zoom_max if zoom_min is bigger that it, so that it is
+	 * possible to easily generate zoom level 19 with jist one -z19
+	 */
+	if (zoom_max < zoom_min)
+		zoom_max = zoom_min;
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	struct load *lq;
 	for (; optind < argc; ++optind) {
