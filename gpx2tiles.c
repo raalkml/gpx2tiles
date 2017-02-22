@@ -33,7 +33,7 @@ static int drop_shadows; /* draw diagnostic shadows */
 #define HIGHLIGHT (0xff00ef)
 static int highlight_tile_cross; /* use different color to highlight crossing a tile */
 
-#define HEATMAP_MODE (~(int)0 >> 1)
+#define HEATMAP_MODE ((int)(~0u >> 1))
 /* Do not draw lines at zoom levels below z_no_lines */
 static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
