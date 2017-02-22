@@ -16,6 +16,7 @@
 #include "gpx.h"
 #include "tstime.h"
 #include "slippy-map.h"
+#include "rgbhsv.h"
 
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define nabs(a) ({int __a = (a); __a < 0 ? -__a : __a;})
@@ -32,9 +33,30 @@ static int drop_shadows; /* draw diagnostic shadows */
 #define HIGHLIGHT (0xff00ef)
 static int highlight_tile_cross; /* use different color to highlight crossing a tile */
 
+#define HEATMAP_MODE (~(int)0 >> 1)
 /* Do not draw lines at zoom levels below z_no_lines */
 static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
+
+static const int spdclr[] = {
+	gdTrueColor(0x00, 0x00, 0x7f),
+	gdTrueColor(0xcf, 0x00, 0x00), // darkred
+	gdTrueColor(0xa4, 0x61, 0x00), // brown
+	gdTrueColor(0xf4, 0xfb, 0x39), // yellow
+	gdTrueColor(0x00, 0x7f, 0x00), // green
+	/*
+	 * Using only blue colors:
+	 *
+	 * gdTrueColor(0x00, 0x00, 0x33),
+	 * gdTrueColor(0x06, 0x1a, 0x5b),
+	 * gdTrueColor(0x10, 0x45, 0x9f),
+	 * gdTrueColor(0x18, 0x69, 0xd8),
+	 * gdTrueColor(0x1e, 0x83, 0xff),
+	 *
+	 */
+};
+
+static const int heatmapclr = gdTrueColor(0x06, 0x1a, 0x5b);
 
 struct xy
 {
@@ -325,24 +347,6 @@ static void free_zoom_level(int z)
 			free_tile(slist_stack_pop(&zl->tiles[h]));
 }
 
-static const int spdclr[] = {
-	gdTrueColor(0x00, 0x00, 0x7f),
-	gdTrueColor(0xcf, 0x00, 0x00), // darkred
-	gdTrueColor(0xa4, 0x61, 0x00), // brown
-	gdTrueColor(0xf4, 0xfb, 0x39), // yellow
-	gdTrueColor(0x00, 0x7f, 0x00), // green
-	/*
-	 * Using only blue colors:
-	 *
-	 * gdTrueColor(0x00, 0x00, 0x33),
-	 * gdTrueColor(0x06, 0x1a, 0x5b),
-	 * gdTrueColor(0x10, 0x45, 0x9f),
-	 * gdTrueColor(0x18, 0x69, 0xd8),
-	 * gdTrueColor(0x1e, 0x83, 0xff),
-	 *
-	 */
-};
-
 #define XY(_x, _y) (struct xy){.x = _x, .y = _y}
 
 /*
@@ -372,6 +376,27 @@ static int crossing_tile(int x1, int y1, int x2, int y2)
 	    intersects(XY(x1, y1), XY(x2, y2), XY(0, 255), XY(255, 255)))
 		return 1;
 	return 0;
+}
+
+static int intensify(int c, double step)
+{
+	struct r_g_b rgb;
+	struct h_s_v hsv;
+
+	rgb.r = gdTrueColorGetRed(c);
+	rgb.r /= 255.;
+	rgb.g = gdTrueColorGetGreen(c);
+	rgb.g /= 255.;
+	rgb.b = gdTrueColorGetBlue(c);
+	rgb.b /= 255.;
+	hsv = rgb2hsv(rgb);
+	hsv.v += step;
+	if (hsv.v > 1.)
+		hsv.v = 1.;
+	rgb = hsv2rgb(hsv);
+	return gdTrueColor((int)(rgb.r * 255.),
+			   (int)(rgb.g * 255.),
+			   (int)(rgb.b * 255.));
 }
 
 static void draw_track_points(struct gpx_point *points, int z)
@@ -414,7 +439,15 @@ static void draw_track_points(struct gpx_point *points, int z)
 				speed = 4;
 		}
 
-		int color = spdclr[speed]; // gdAntiAliased produced really bad results on light maps
+		int color;
+
+		if (z_no_lines == HEATMAP_MODE) {
+			color = gdImageGetTrueColorPixel(tile->img, pix.x, pix.y);
+			color = color ? intensify(color, 0.05) : heatmapclr;
+		} else {
+			// gdAntiAliased produced really bad results on light maps
+			color = spdclr[speed];
+		}
 
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
@@ -598,6 +631,7 @@ static void usage(const char *argv0)
 		"  -T <max-tiles> max number of tiles to keep in memory\n"
 		"  -j <jobs> number of tracks to load in parallel\n"
 		"  -L <line-zoom> zoom level above which stop drawing lines (only dots)\n"
+		"  -H heatmap mode\n"
 		"  -0 read the list of GPX files from stdin, NUL-terminated\n"
 		"     The files given on command-line are processed first\n"
 		"  -z <min-zoom>/-Z <max-zoom> only generate tiles from <min-zoom> to <max-zoom>\n"
@@ -621,7 +655,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:h")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hh")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -643,6 +677,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'L':
 			z_no_lines = strtol(optarg, NULL, 0);
+			break;
+		case 'H':
+			z_no_lines = HEATMAP_MODE;
 			break;
 		case 'z':
 			zoom_min = strtol(optarg, NULL, 0);
