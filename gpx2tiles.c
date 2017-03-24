@@ -399,7 +399,7 @@ static int intensify(int c, double step)
 			   (int)(rgb.b * 255.));
 }
 
-static void draw_track_points(struct gpx_point *points, int z)
+static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 {
 	struct gpx_point *pt, *ppt;
 
@@ -427,7 +427,7 @@ static void draw_track_points(struct gpx_point *points, int z)
 			open_tile(ptile, z);
 		}
 
-		if (pt->flags & GPX_PT_SPEED) {
+		if (!bad_src && (pt->flags & GPX_PT_SPEED)) {
 			double kph = pt->speed * 3.6;
 			if (kph <= 10.0)
 				speed = 1;
@@ -510,9 +510,15 @@ static void make_tiles(struct gpx_file *files, int z)
 
 	for (f = files; f; f = f->next) {
 		struct gpx_segment *seg;
+		slist_for_each(seg, &f->gpx->segments) {
+			/*
+			 * This GPS data source is not reliable and precise
+			 * enough to use it for speed analysis.
+			 */
+			int bad_src = seg->src == GPX_SRC_NETWORK;
 
-		slist_for_each(seg, &f->gpx->segments)
-			draw_track_points(seg->points.head, z);
+			draw_track_points(seg->points.head, z, bad_src);
+		}
 	}
 }
 
