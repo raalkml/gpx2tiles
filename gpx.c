@@ -23,11 +23,75 @@ static inline size_t strlcpy(char* tgt, const char* src, size_t size)
 	return r;
 }
 
-/*
 const char GPX_SRC_GPS[] = "gps";
-const char GPX_SRC_SYNTHETIC[] = "synt";
-const char GPX_SRC_UNKNOWN[] = "unk";
-*/
+const char GPX_SRC_NETWORK[] = "network";
+const char GPX_SRC_UNKNOWN[] = "";
+
+static int static_gpx_src(const char *s)
+{
+	return s == GPX_SRC_UNKNOWN || s == GPX_SRC_GPS || s == GPX_SRC_NETWORK;
+}
+
+struct segtab_entry
+{
+	struct segtab_entry *next;
+	char *src;
+	struct gpx_segment *seg;
+};
+
+struct segtab {
+	SLIST_STACK_DECLARE(struct segtab_entry, segs);
+	struct segtab_entry reserve[10];
+	int reserve_use;
+};
+
+static struct segtab_entry *put_segtab_src(struct segtab *tab, char *src)
+{
+	struct segtab_entry *e;
+	if (tab->reserve_use == countof(tab->reserve))
+		e = malloc(sizeof(*e));
+	else
+		e = tab->reserve + tab->reserve_use++;
+	e->src = src;
+	e->seg = NULL;
+	slist_push(&tab->segs, e);
+	return e;
+}
+
+static struct segtab_entry *get_segtab(struct segtab *tab, const char *src)
+{
+	struct segtab_entry *e;
+
+	slist_for_each(e, &tab->segs)
+		if (strcmp(e->src, src) == 0)
+			goto done;
+	e = put_segtab_src(tab, strdup(src));
+done:
+	return e;
+}
+
+static void init_segtab(struct segtab *tab)
+{
+	tab->segs.head = NULL;
+	tab->reserve_use = 0;
+	put_segtab_src(tab, (char *)GPX_SRC_UNKNOWN);
+	put_segtab_src(tab, (char *)GPX_SRC_NETWORK);
+	put_segtab_src(tab, (char *)GPX_SRC_GPS);
+}
+
+static void segtab_cleanup(struct segtab *tab)
+{
+	while (!slist_empty(&tab->segs)) {
+		struct segtab_entry *e = slist_stack_pop(&tab->segs);
+
+		if (tab->reserve <= e && e < tab->reserve + countof(tab->reserve))
+			continue;
+		if (!static_gpx_src(e->src))
+			free(e->src);
+		free_trk_segment(e->seg);
+		free(e);
+	}
+}
 
 struct gpx_point *new_trk_point(void)
 {
@@ -35,7 +99,6 @@ struct gpx_point *new_trk_point(void)
 
 	pt->next = NULL;
 	pt->flags = 0;
-	//pt->src = GPX_SRC_SYNTHETIC;
 	pt->loc.lat = pt->loc.lon = 0.0;
 	return pt;
 }
@@ -50,8 +113,10 @@ void put_trk_point(struct gpx_segment *seg, struct gpx_point *pt)
 	slist_append(&seg->points, pt);
 }
 
-void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
+static struct segtab_entry *parse_trkpt(xmlNode *xpt, struct gpx_point *pt, struct segtab *segs)
 {
+	struct segtab_entry *e = NULL;
+
 	for (xpt = xmlFirstElementChild(xpt); xpt;
 	     xpt = xmlNextElementSibling(xpt)) {
 		xmlChar *s;
@@ -61,15 +126,10 @@ void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
 			s = xmlNodeGetContent(xpt);
 			strlcpy(pt->time, ASCII s, sizeof(pt->time));
 			goto frees;
-#if 0
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "src") == 0) {
 			s = xmlNodeGetContent(xpt);
-			if (xmlStrcasecmp(s, BAD_CAST GPX_SRC_GPS) == 0)
-				pt->src = GPX_SRC_GPS;
-			else
-				pt->src = GPX_SRC_UNKNOWN;
+			e = get_segtab(segs, (char *)s);
 			goto frees;
-#endif
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "speed") == 0) {
 			pt->flags |= GPX_PT_SPEED;
 			s = xmlNodeGetContent(xpt);
@@ -105,6 +165,7 @@ void parse_trkpt(xmlNode *xpt, struct gpx_point *pt)
 	frees:
 		xmlFree(s);
 	}
+	return e;
 }
 
 /*
@@ -171,9 +232,14 @@ static void synthesize_speed(struct gpx_point *pt, const struct gpx_point *ppt)
 
 static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, int nseg*/)
 {
-	struct gpx_segment *seg = NULL;
 	int ptcnt = 0;
 	int synspeed = 0;
+	struct segtab_entry *e, *unknown;
+	struct segtab segs;
+
+	init_segtab(&segs);
+	unknown = get_segtab(&segs, GPX_SRC_UNKNOWN);
+
 	for (; xpt; xpt = xmlNextElementSibling(xpt)) {
 		char *err, *nptr;
 		struct gpx_point *pt;
@@ -194,37 +260,49 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 		if ((pt->loc.lon == 0.0 && nptr == err) || pt->loc.lon == HUGE_VAL)
 			goto fail;
 		pt->flags |= GPX_PT_LATLON;
-		parse_trkpt(xpt, pt);
+		e = parse_trkpt(xpt, pt, &segs);
+		if (!e)
+			e = unknown;
 		if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME)
 			synspeed = 1;
 		if (!(pt->flags & GPX_PT_TIME))
 			sprintf(pt->time, "%d", ptcnt);
 		//pt->trk = trk;
 		//pt->seg = nseg;
-		if (!seg)
-			seg = new_trk_segment();
-		put_trk_point(seg, pt);
+		if (!e->seg)
+			e->seg = new_trk_segment(e->src);
+		put_trk_point(e->seg, pt);
 		++ptcnt;
 		continue;
 	fail:
 		free_trk_point(pt);
 	}
-	if (seg) {
-		struct gpx_point *pt = seg->points.head;
-		struct gpx_point *ppt = NULL;
+	if (!slist_empty(&segs.segs))
+		slist_for_each(e, &segs.segs) {
+			if (e->seg) {
+				if (synspeed) {
+					struct gpx_point *pt;
+					struct gpx_point *ppt = NULL;
 
-		for (; synspeed && pt; ppt = pt, pt = pt->next)
-			if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME && ppt)
-				synthesize_speed(pt, ppt);
-		put_trk_segment(gpxf, seg);
-	}
+					for (pt = e->seg->points.head; pt; ppt = pt, pt = pt->next)
+						if ((pt->flags & (GPX_PT_TIME|GPX_PT_SPEED)) == GPX_PT_TIME && ppt)
+							synthesize_speed(pt, ppt);
+				}
+				e->seg->free_src = !static_gpx_src(e->seg->src);
+				e->src = NULL;
+				put_trk_segment(gpxf, e->seg);
+				e->seg = NULL;
+			}
+		}
+	segtab_cleanup(&segs);
 	return ptcnt;
 }
 
-struct gpx_segment *new_trk_segment(void)
+struct gpx_segment *new_trk_segment(const char *src)
 {
 	struct gpx_segment *seg = malloc(sizeof(*seg));
 
+	seg->src = src;
 	seg->next = NULL;
 	slist_init(&seg->points);
 	return seg;
@@ -232,8 +310,12 @@ struct gpx_segment *new_trk_segment(void)
 
 void free_trk_segment(struct gpx_segment *seg)
 {
+	if (!seg)
+		return;
 	while (seg->points.head)
 		free_trk_point(slist_pop(&seg->points));
+	if (seg->free_src)
+		free((char *)seg->src);
 	free(seg);
 }
 

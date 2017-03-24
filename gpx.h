@@ -22,6 +22,8 @@ struct gpx_point;
 struct gpx_segment
 {
 	struct gpx_segment *next;
+	const char *src;
+	unsigned free_src:1;
 
 	struct { struct gpx_point *head, **tail; } points;
 };
@@ -49,7 +51,6 @@ struct gpx_point
 	float hdop, vdop, pdop;
 
 	char time[24];
-	//const char *src; // "gps"
 	// struct gpx_data *container;
 	// struct gpx_segment *seg;
 	// struct gpx_track *trk;
@@ -57,14 +58,14 @@ struct gpx_point
 };
 
 extern const char GPX_SRC_GPS[];
-extern const char GPX_SRC_SYNTHETIC[];
+extern const char GPX_SRC_NETWORK[];
 extern const char GPX_SRC_UNKNOWN[];
 
-struct gpx_point *new_trk_point(void); /* GPX_SRC_SYNTHETIC */
+struct gpx_point *new_trk_point(void);
 void free_trk_point(struct gpx_point *);
 void put_trk_point(struct gpx_segment *, struct gpx_point *);
 
-struct gpx_segment *new_trk_segment(void);
+struct gpx_segment *new_trk_segment(const char *src);
 void free_trk_segment(struct gpx_segment *);
 void put_trk_segment(struct gpx_data *, struct gpx_segment *);
 

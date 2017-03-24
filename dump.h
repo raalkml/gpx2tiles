@@ -10,8 +10,8 @@ static inline void dump_points(struct gpx_file *f)
 			const struct gpx_point *pt;
 
 			slist_for_each(pt, &seg->points) {
-				printf(" %d: %f,%f %s\n",
-				       nseg, pt->loc.lat, pt->loc.lon, pt->time);
+				printf(" %d (%s): %f,%f %s\n",
+				       nseg, seg->src, pt->loc.lat, pt->loc.lon, pt->time);
 				int z, len = 0;
 				for (z = 1; z <= 18; ++z) {
 					struct xy tile = get_tile_xy(&pt->loc, z);
