@@ -113,6 +113,75 @@ void put_trk_point(struct gpx_segment *seg, struct gpx_point *pt)
 	slist_append(&seg->points, pt);
 }
 
+void merge_trk_points(struct gpx_point *dest, const struct gpx_point *src)
+{
+	unsigned flags = src->flags & ~dest->flags;
+
+	if (flags & GPX_PT_LATLON) {
+		dest->loc = src->loc;
+		dest->flags |= GPX_PT_LATLON;
+	}
+	if (flags & GPX_PT_TIME) {
+		strcpy(dest->time, src->time);
+		dest->flags |= GPX_PT_TIME;
+	}
+	if (flags & GPX_PT_ELE) {
+		dest->ele = src->ele;
+		dest->flags |= GPX_PT_ELE;
+	}
+	if (flags & GPX_PT_COURSE) {
+		dest->course = src->course;
+		dest->flags |= GPX_PT_COURSE;
+	}
+	if (flags & GPX_PT_SPEED) {
+		dest->speed = src->speed;
+		dest->flags |= GPX_PT_SPEED;
+	}
+	if (flags & GPX_PT_HDOP) {
+		dest->hdop = src->hdop;
+		dest->flags |= GPX_PT_HDOP;
+	}
+	if (flags & GPX_PT_VDOP) {
+		dest->vdop = src->vdop;
+		dest->flags |= GPX_PT_VDOP;
+	}
+	if (flags & GPX_PT_PDOP) {
+		dest->pdop = src->pdop;
+		dest->flags |= GPX_PT_PDOP;
+	}
+	if (flags & GPX_PT_SAT) {
+		dest->sat = src->sat;
+		dest->flags |= GPX_PT_SAT;
+	}
+}
+
+/* returns the flags of a where the values are equal to b */
+unsigned gpx_point_compare(const struct gpx_point *a, const struct gpx_point *b)
+{
+	unsigned flags = a->flags & b->flags;
+
+	if ((flags & GPX_PT_LATLON) && !(a->loc.lat == b->loc.lat &&
+					 a->loc.lon == b->loc.lon))
+		flags &= ~GPX_PT_LATLON;
+	if ((flags & GPX_PT_TIME) && strcmp(a->time, b->time))
+		flags &= ~GPX_PT_TIME;
+	if ((flags & GPX_PT_ELE) && a->ele != b->ele)
+		flags &= ~GPX_PT_ELE;
+	if ((flags & GPX_PT_COURSE) && a->course != b->course)
+		flags &= ~GPX_PT_COURSE;
+	if ((flags & GPX_PT_SPEED) && a->speed != b->speed)
+		flags &= ~GPX_PT_SPEED;
+	if ((flags & GPX_PT_HDOP) && a->hdop != b->hdop)
+		flags &= ~GPX_PT_HDOP;
+	if ((flags & GPX_PT_VDOP) && a->vdop != b->vdop)
+		flags &= ~GPX_PT_VDOP;
+	if ((flags & GPX_PT_PDOP) && a->pdop != b->pdop)
+		flags &= ~GPX_PT_PDOP;
+	if ((flags & GPX_PT_SAT) && a->sat != b->sat)
+		flags &= ~GPX_PT_SAT;
+	return flags;
+}
+
 static struct segtab_entry *parse_trkpt(xmlNode *xpt, struct gpx_point *pt, struct segtab *segs)
 {
 	struct segtab_entry *e = NULL;
@@ -234,6 +303,7 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 {
 	int ptcnt = 0;
 	int synspeed = 0;
+	struct gpx_point *ppt = NULL;
 	struct segtab_entry *e, *unknown;
 	struct segtab segs;
 
@@ -271,7 +341,21 @@ static int process_trk_points(struct gpx_data *gpxf, xmlNode *xpt /*, int trk, i
 		//pt->seg = nseg;
 		if (!e->seg)
 			e->seg = new_trk_segment(e->src);
+		if (ppt) {
+			unsigned same = pt->flags & ppt->flags;
+
+			if ((same & GPX_PT_LATLON) &&
+			    (same & GPX_PT_TIME) &&
+			    pt->loc.lat == ppt->loc.lat &&
+			    pt->loc.lon == ppt->loc.lon &&
+			    strcmp(pt->time, ppt->time) == 0)
+				merge_trk_points(ppt, pt);
+			same = gpx_point_compare(ppt, pt);
+			if (same == pt->flags)
+				goto fail;
+		}
 		put_trk_point(e->seg, pt);
+		ppt = pt;
 		++ptcnt;
 		continue;
 	fail:
