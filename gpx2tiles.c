@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <getopt.h>
 #include <pthread.h>
+#include <ctype.h>
 #include <gd.h>
 #include "slist.h"
 #include "gpx.h"
@@ -37,6 +38,8 @@ static int highlight_tile_cross; /* use different color to highlight crossing a 
 /* Do not draw lines at zoom levels below z_no_lines */
 static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
+static int z_thickness[20];
+
 
 static const int spdclr[] = {
 	gdTrueColor(0x00, 0x00, 0x7f),
@@ -44,6 +47,7 @@ static const int spdclr[] = {
 	gdTrueColor(0xa4, 0x61, 0x00), // brown
 	gdTrueColor(0xf4, 0xfb, 0x39), // yellow
 	gdTrueColor(0x00, 0x7f, 0x00), // green
+	gdTrueColor(0x00, 0xbf, 0x00), // green
 	/*
 	 * Using only blue colors:
 	 *
@@ -253,6 +257,7 @@ static struct tile *open_tile(struct tile *tile, int z)
 		zoom_levels[z].image_cnt++;
 	}
 	gdImageSetAntiAliased(tile->img, GD_ANTIALIAS_COLOR);
+	gdImageSetThickness(tile->img, z < countof(z_thickness) ? z_thickness[z] : 1);
 	return tile;
 }
 
@@ -645,6 +650,8 @@ static void usage(const char *argv0)
 		"  -v increase verbosity\n"
 		"  -d <mask> if bit0 set in <mask>, the generated tiles and track points are drawn\n"
 		"     with diagnostics information around them (lines)\n"
+		"  -t <zoom>:<line-thickness>[+] set thickness for lines at the level\n"
+		"     extends till the last zoom level if ends with a \"+\", i.e. -t 12:3+\n"
 		"  -h gives this message\n",
 		argv0);
 }
@@ -661,7 +668,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hh")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -675,6 +682,26 @@ int main(int argc, char *argv[])
 			break;
 		case 'I':
 			reinitialize = 1;
+			break;
+		case 't':
+			{
+				char *p;
+				int z = strtol(optarg, &p, 0);
+				if (z < 0 || z > countof(z_thickness)) {
+					fprintf(stderr, "Invalid zoom level %s\n", optarg);
+					exit(1);
+				}
+				while (*p && !isdigit(*p))
+					++p;
+				z_thickness[z] = strtol(p, &p, 0);
+				if (!z_thickness[z])
+					z_thickness[z] = 1;
+				if ('+' == *p) {
+					int t = z_thickness[z];
+					for ( ++z; z < countof(z_thickness); ++z)
+						z_thickness[z] = t;
+				}
+			}
 			break;
 		case 'T':
 			z_max_tiles = strtol(optarg, NULL, 0);
