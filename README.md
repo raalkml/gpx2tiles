@@ -6,8 +6,8 @@ Inpired by the http://wiki.openstreetmap.org/wiki/Gpx2png
 
 The gpx2png is a Perl script and as such is too slow and too resource hungry
 to be used on the puny server hardware originally intended for the task.
-Besides, its dependencies (ImageMagick in particular) make its deployment a
-bit extensive a task.
+Besides, its dependencies (ImageMagick in particular) make a task of its
+deployment a bit complicated.
 
 Gpx2tiles requires two external libraries LidGD (https://www.libgd.org/) - to
 draw the tiles, and LibXML2 (www.xmlsoft.org/) - for parsing the XML of the
@@ -24,7 +24,10 @@ The output is immediately usable by Leaflet and OpenLayers: the directory
 structure corresponds to the popular .../{z}/{x}/{y}.png layout.
 
 The usage of memory can be restricted to be able to run it in constrained
-environments.
+environments. The code is not good enough to process (even at slower pace)
+really big GPX data sets on small, single-board computers like Raspberry Pi,
+though. Please be careful, the program will happily eat all available memory
+if it has to.
 
 Usage example:
 
@@ -32,5 +35,6 @@ Usage example:
 
 This will place the tiles in the "tiles/tracklogs" directory, creating the
 necessary zoom levels and latitude directories, updating the existing tiles
-with the new track information.
+with the new track information (remove the files before running the program,
+to generate the tiles from scratch).
 
