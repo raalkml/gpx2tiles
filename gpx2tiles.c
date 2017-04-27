@@ -40,6 +40,7 @@ static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
 static int z_thickness[20];
 
+static int set_speed = INT_MIN;
 
 static const int spdclr[] = {
 	gdTrueColor(0x00, 0x00, 0x7f),
@@ -404,6 +405,27 @@ static int intensify(int c, double step)
 			   (int)(rgb.b * 255.));
 }
 
+static int speed_kph_to_clridx(double kph)
+{
+	int speed = 0;
+
+	if (signbit(kph)) /* is negative */
+		speed = 0;
+	else if (kph <= 10.0)
+		speed = 1;
+	else if (kph <= 20.0)
+		speed = 2;
+	else if (kph <= 25.0)
+		speed = 3;
+	else if (kph <= 40.0)
+		speed = 4;
+	else if (kph > 40.0)
+		speed = 5;
+	if (speed > countof(spdclr))
+		speed = countof(spdclr) - 1;
+	return speed;
+}
+
 static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 {
 	struct gpx_point *pt, *ppt;
@@ -432,17 +454,10 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 			open_tile(ptile, z);
 		}
 
-		if (!bad_src && (pt->flags & GPX_PT_SPEED)) {
-			double kph = pt->speed * 3.6;
-			if (kph <= 10.0)
-				speed = 1;
-			else if (kph <= 20.0)
-				speed = 2;
-			else if (kph <= 25.0)
-				speed = 3;
-			else if (kph > 25.0)
-				speed = 4;
-		}
+		if (!bad_src && (pt->flags & GPX_PT_SPEED))
+			speed = speed_kph_to_clridx(pt->speed * 3.6);
+		if (set_speed != INT_MIN)
+			speed = speed_kph_to_clridx((double)set_speed);
 
 		int color;
 
@@ -652,6 +667,7 @@ static void usage(const char *argv0)
 		"     with diagnostics information around them (lines)\n"
 		"  -t <zoom>:<line-thickness>[+] set thickness for lines at the level\n"
 		"     extends till the last zoom level if ends with a \"+\", i.e. -t 12:3+\n"
+		"  -S <kph> assume the speed to be always <kph>\n"
 		"  -h gives this message\n",
 		argv0);
 }
@@ -668,7 +684,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -682,6 +698,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'I':
 			reinitialize = 1;
+			break;
+		case 'S':
+			set_speed = strtol(optarg, NULL, 0);
 			break;
 		case 't':
 			{
