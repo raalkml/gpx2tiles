@@ -44,13 +44,15 @@ static int z_thickness[ZOOM_MAX + 1];
 
 static int set_speed = INT_MIN;
 
-static const int spdclr[] = {
-	gdTrueColor(0x00, 0x00, 0x7f),
-	gdTrueColor(0xcf, 0x00, 0x00), // darkred
-	gdTrueColor(0xa4, 0x61, 0x00), // brown
-	gdTrueColor(0xf4, 0xfb, 0x39), // yellow
-	gdTrueColor(0x00, 0x7f, 0x00), // green
-	gdTrueColor(0x00, 0xbf, 0x00), // green
+static const struct { int kph, clr; } spdclr[] = {
+	{ 0, gdTrueColor(0x00, 0x00, 0x7f) },
+	{10, gdTrueColor(0xcf, 0x00, 0x00) }, // darkred
+	{20, gdTrueColor(0xa4, 0x61, 0x00) }, // brown
+	{25, gdTrueColor(0xf4, 0xfb, 0x39) }, // yellow
+	{40, gdTrueColor(0x00, 0x7f, 0x00) }, // green
+	{50, gdTrueColor(0x00, 0xff, 0x00) }, // very green
+	{55, gdTrueColor(0x4a, 0xf9, 0xff) }, // light cyan
+	{60, gdTrueColor(0xf5, 0x80, 0xff) }, // light magenta
 	/*
 	 * Using only blue colors:
 	 *
@@ -409,20 +411,14 @@ static int intensify(int c, double step)
 
 static int speed_kph_to_clridx(double kph)
 {
-	int speed = 0;
+	int speed;
 
 	if (signbit(kph)) /* is negative */
 		speed = 0;
-	else if (kph <= 10.0)
-		speed = 1;
-	else if (kph <= 20.0)
-		speed = 2;
-	else if (kph <= 25.0)
-		speed = 3;
-	else if (kph <= 40.0)
-		speed = 4;
-	else if (kph > 40.0)
-		speed = 5;
+	// TODO: for more speed levels switch to binary search
+	for (speed = 0; speed < (int)countof(spdclr); ++speed)
+		if ((int)kph <= spdclr[speed].kph)
+			break;
 	if (speed > countof(spdclr))
 		speed = countof(spdclr) - 1;
 	return speed;
@@ -445,7 +441,6 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 		struct xy ppix = pix;
 		struct xy pxy = xy;
 		struct tile *ptile;
-		int speed = 0;
 
 		if (ppt == pt)
 			ptile = open_tile(tile, z);
@@ -456,19 +451,18 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 			open_tile(ptile, z);
 		}
 
-		if (!bad_src && (pt->flags & GPX_PT_SPEED))
-			speed = speed_kph_to_clridx(pt->speed * 3.6);
-		if (set_speed != INT_MIN)
-			speed = speed_kph_to_clridx((double)set_speed);
-
 		int color;
 
 		if (z_no_lines == HEATMAP_MODE) {
 			color = gdImageGetTrueColorPixel(tile->img, pix.x, pix.y);
 			color = color ? intensify(color, 0.05) : heatmapclr;
 		} else {
-			// gdAntiAliased produced really bad results on light maps
-			color = spdclr[speed];
+			int speed = 0;
+			if (!bad_src && (pt->flags & GPX_PT_SPEED))
+				speed = speed_kph_to_clridx(pt->speed * 3.6);
+			if (set_speed != INT_MIN)
+				speed = speed_kph_to_clridx((double)set_speed);
+			color = spdclr[speed].clr;
 		}
 
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
