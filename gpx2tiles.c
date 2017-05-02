@@ -22,6 +22,8 @@
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define nabs(a) ({int __a = (a); __a < 0 ? -__a : __a;})
 
+#define ZOOM_MAX (19)
+
 static int zoom_min = 1, zoom_max = 18;
 
 extern int verbose;
@@ -38,7 +40,7 @@ static int highlight_tile_cross; /* use different color to highlight crossing a 
 /* Do not draw lines at zoom levels below z_no_lines */
 static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
-static int z_thickness[20];
+static int z_thickness[ZOOM_MAX + 1];
 
 static int set_speed = INT_MIN;
 
@@ -706,8 +708,9 @@ int main(int argc, char *argv[])
 			{
 				char *p;
 				int z = strtol(optarg, &p, 0);
-				if (z < 0 || z > countof(z_thickness)) {
-					fprintf(stderr, "Invalid zoom level %s\n", optarg);
+				if (z < 0 || z > ZOOM_MAX) {
+					fprintf(stderr, "Invalid zoom level %s\n",
+						optarg);
 					exit(1);
 				}
 				while (*p && !isdigit(*p))
@@ -717,7 +720,7 @@ int main(int argc, char *argv[])
 					z_thickness[z] = 1;
 				if ('+' == *p) {
 					int t = z_thickness[z];
-					for ( ++z; z < countof(z_thickness); ++z)
+					for ( ++z; z <= ZOOM_MAX; ++z)
 						z_thickness[z] = t;
 				}
 			}
@@ -738,6 +741,11 @@ int main(int argc, char *argv[])
 			break;
 		case 'Z':
 			zoom_max = strtol(optarg, NULL, 0);
+			if (zoom_max > ZOOM_MAX) {
+				fprintf(stderr, "Zoom level %d is more than maximum %d\n",
+					zoom_max, ZOOM_MAX);
+				exit(1);
+			}
 			break;
 		case 'd':
 			opt = strtol(optarg, NULL, 0);
