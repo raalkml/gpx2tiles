@@ -262,7 +262,7 @@ static struct tile *open_tile(struct tile *tile, int z)
 		zoom_levels[z].image_cnt++;
 	}
 	gdImageSetAntiAliased(tile->img, GD_ANTIALIAS_COLOR);
-	gdImageSetThickness(tile->img, z < countof(z_thickness) ? z_thickness[z] : 1);
+	gdImageSetThickness(tile->img, z <= ZOOM_MAX ? z_thickness[z] : 1);
 	return tile;
 }
 
