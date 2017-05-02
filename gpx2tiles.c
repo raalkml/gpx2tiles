@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include <ctype.h>
 #include <gd.h>
+#include <gdfonts.h>
 #include "slist.h"
 #include "gpx.h"
 #include "tstime.h"
@@ -33,6 +34,8 @@ static int reinitialize; /* don't update the tiles, redraw them from scratch */
 
 #define SHADOW (0xc0c0c0)
 static int drop_shadows; /* draw diagnostic shadows */
+#define SPEED_CLR (0xc0c0c0)
+static int draw_speed; /* draw speed in kph */
 #define HIGHLIGHT (0xff00ef)
 static int highlight_tile_cross; /* use different color to highlight crossing a tile */
 
@@ -150,6 +153,7 @@ struct tile {
 	struct xy xy;
 	struct gpx_latlon loc;
 	int point_cnt;
+	unsigned has_speed:1;
 	gdImage *img;
 };
 
@@ -207,6 +211,7 @@ static struct tile *alloc_tile(const struct xy *xy, int z)
 				zoom_levels[z].image_cnt++;
 			}
 		}
+		tile->has_speed = 0;
 		tile->xy = *xy;
 		tile->loc.lat = tiley2lat(xy->y, z);
 		tile->loc.lon = tilex2long(xy->x, z);
@@ -480,6 +485,19 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 		else if (drop_shadows)
 			gdImageEllipse(tile->img, pix.x, pix.y,
 				       5, 5, (20 << 24) | SHADOW);
+		if (draw_speed && !tile->has_speed) {
+			char speed[8];
+			int xx, yy;
+
+			tile->has_speed = 1;
+			snprintf(speed, sizeof(speed), "%.1f", pt->speed * 3.6);
+			gdImageString (tile->img, gdFontSmall, 0, 0,
+				       (unsigned char *)speed, SPEED_CLR);
+			xx = gdFontSmall->w * strlen(speed);
+			yy = gdFontSmall->h + 1;
+			gdImageLine(tile->img, 0, yy, xx, yy, SPEED_CLR);
+			gdImageLine(tile->img, xx, yy, pix.x, pix.y, SPEED_CLR);
+		}
 		if (tile == ptile) {
 			if (ppix.x != pix.x || ppix.y != pix.y)
 				gdImageLine(tile->img, pix.x, pix.y, ppix.x, ppix.y, color);
@@ -661,6 +679,8 @@ static void usage(const char *argv0)
 		"  -v increase verbosity\n"
 		"  -d <mask> if bit0 set in <mask>, the generated tiles and track points are drawn\n"
 		"     with diagnostics information around them (lines)\n"
+		"     bit1 - highlights tile crossings\n"
+		"     bit2 - draws the speed in tile\n"
 		"  -t <zoom>:<line-thickness>[+] set thickness for lines at the level\n"
 		"     extends till the last zoom level if ends with a \"+\", i.e. -t 12:3+\n"
 		"  -S <kph> assume the speed to be always <kph>\n"
@@ -747,6 +767,8 @@ int main(int argc, char *argv[])
 				drop_shadows = 1;
 			if (opt & 0x02)
 				highlight_tile_cross = 1;
+			if (opt & 0x04)
+				draw_speed = 1;
 			break;
 		case 'v':
 			++verbose;
