@@ -45,6 +45,8 @@ static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
 static int z_thickness[ZOOM_MAX + 1];
 
+static double no_lines_speed = 1.0; /* kph */
+
 static int set_speed = INT_MIN;
 
 static const struct { int kph, clr; } spdclr[] = {
@@ -498,9 +500,13 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 			gdImageLine(tile->img, 0, yy, xx, yy, SPEED_CLR);
 			gdImageLine(tile->img, xx, yy, pix.x, pix.y, SPEED_CLR);
 		}
+		if ((pt->flags & GPX_PT_SPEED) &&
+		    pt->speed * 3.6 < no_lines_speed)
+			goto close_tiles;
 		if (tile == ptile) {
 			if (ppix.x != pix.x || ppix.y != pix.y)
-				gdImageLine(tile->img, pix.x, pix.y, ppix.x, ppix.y, color);
+				gdImageLine(tile->img, pix.x, pix.y,
+					    ppix.x, ppix.y, color);
 			goto close_tiles;
 		}
 		const int dx = tile->xy.x - ptile->xy.x;
