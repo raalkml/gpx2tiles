@@ -321,7 +321,7 @@ static void flush_tile(struct tile *tile, int z, int verbosity)
 		gdImageDestroy(tile->img);
 		tile->img = NULL;
 		zoom_levels[z].image_cnt--;
-		if (verbosity)
+		if (verbosity > 1)
 			printf("z %d %d/%d (%d)\n", z,
 			       tile->xy.x, tile->xy.y, tile->point_cnt);
 	}
@@ -592,6 +592,7 @@ static void make_tiles(struct gpx_file *files, int z)
 
 	for (f = files; f; f = f->next) {
 		struct gpx_segment *seg;
+
 		slist_for_each(seg, &f->gpx->segments) {
 			/*
 			 * This GPS data source is not reliable and precise
@@ -601,6 +602,10 @@ static void make_tiles(struct gpx_file *files, int z)
 
 			draw_track_points(seg->points.head, z, bad_src);
 		}
+		if (verbose > 0)
+			printf("z %2d %s (%d points, tiles %d)\n", z, f->gpx->path,
+			       f->gpx->points_cnt,
+			       zoom_levels[z].tile_cnt);
 	}
 }
 
@@ -614,20 +619,20 @@ static inline void save_zoom_level(int z)
 		slist_for_each(tile, &zoom_levels[z].tiles[h]) {
 			if (tile->img)
 				flush_tile(tile, z, 0);
-			if (!verbose)
-				continue;
-			if (!len)
-				len += printf("z %d", z);
-			len += printf(" %d/%d (%d)",
-				      tile->xy.x, tile->xy.y,
-				      tile->point_cnt);
-			if (len >= 60) {
-				fputc('\n', stdout);
-				len = 0;
+			if (verbose > 1) {
+				if (!len)
+					len += printf("z %d", z);
+				len += printf(" %d/%d (%d)",
+					      tile->xy.x, tile->xy.y,
+					      tile->point_cnt);
+				if (len >= 60) {
+					fputc('\n', stdout);
+					len = 0;
+				}
 			}
 		}
 	}
-	if (verbose && len)
+	if (verbose > 1 && len)
 		fputc('\n', stdout);
 }
 
@@ -700,10 +705,10 @@ static void *loader(void *arg)
 		pthread_mutex_unlock(&load_q_lock);
 		if (!lq)
 			continue;
-		if (verbose)
+		if (verbose > 1)
 			fprintf(stderr, "%ld: %s open\n", (long)pthread_self(), lq->path);
 		lq->gf->gpx = gpx_read_file(lq->path);
-		if (verbose)
+		if (verbose > 1)
 			fprintf(stderr, "%ld: %s loaded\n", (long)pthread_self(), lq->path);
 	}
 }
@@ -956,7 +961,7 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "%d files, %d points, -j%d, %ld.%09ld sec\n",
 		files_cnt, points_cnt, parallel,
 	       duration.tv_sec, duration.tv_nsec);
-	if (verbose > 2)
+	if (verbose > 3)
 		dump_points(files.head);
 
 	if (cd_to != -1 && fchdir(cd_to) == -1) {
@@ -984,9 +989,9 @@ int main(int argc, char *argv[])
 			printf("(%d tiles, dx %f dy %f)%s",
 			       zoom_levels[z].tile_cnt,
 			       zoom_levels[z].xunit, zoom_levels[z].yunit,
-			       verbose ? "\n" : "");
+			       verbose > 1 ? "\n" : "");
 			fflush(stdout);
-			if (verbose > 2)
+			if (verbose > 3)
 				dump_zoom_level(z);
 			save_zoom_level(z);
 			free_zoom_level(z);
