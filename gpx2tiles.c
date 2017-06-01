@@ -719,10 +719,10 @@ struct tile_proc
 static void *tile_processor(void *arg)
 {
 	const struct tile_proc *tp = arg;
-	int z;
+	int i;
 
-	for (z = tp->start; z < tp->end; ++z) {
-		int tile_cnt;
+	for (i = tp->start; i < tp->end; ++i) {
+		int tile_cnt, z = tp->order[i];
 
 		make_tiles(tp->files, z);
 		tile_cnt = zoom_levels[z].tile_cnt;
@@ -994,40 +994,26 @@ int main(int argc, char *argv[])
 				printf(" ... saved\n");
 		}
 	} else {
+		int order[ZOOM_MAX + 1];
 		int zooms = zoom_max - zoom_min + 1;
 		struct tile_proc *tp, *tproc;
-		uint64_t tiles_per_thread = 0;
+		int a = zoom_min, b = zoom_max;
 
 		for (z = zoom_min; z <= zoom_max; ++z)
-			tiles_per_thread += 1 << (2 * z);
+			order[z] = z & 1 ? b-- : a++;
 		parallel = min(parallel, zooms);
-		tiles_per_thread /= parallel;
 		tproc = calloc(parallel, sizeof(*tproc));
 		for (tp = tproc, z = zoom_min; z <= zoom_max; ++tp) {
 			int err;
-			uint64_t tiles;
 
+			tp->order = order;
 			tp->start = z;
-			tiles = 1 << (2 * z++);
-			tp->end = z;
-			while (z < zoom_max && tiles < tiles_per_thread) {
-				uint64_t wrk = tiles + (1 << (2 * z));
-				/* next zoom will overload this thread */
-				if (wrk > tiles_per_thread)
-					break;
-				/* leave some work for other threads */
-				if (zoom_max - z + 1 <= parallel - (tp - tproc))
-					break;
-				tiles = wrk;
-				tp->end = ++z;
-			}
+			tp->end = z + zooms / parallel;
 			if (tp - tproc == parallel - 1)
 				tp->end = zoom_max + 1;
 			tp->files = files.head;
-			//printf("%d z %d(%d) %llu%%\n", (int)(tp - tproc),
-			//       tp->start, tp->end - tp->start,
-			//       tiles > tiles_per_thread ? 999ull :
-			//       tiles * 100llu / tiles_per_thread);
+			//printf("%d z %d(%d)\n", (int)(tp - tproc),
+			//       tp->start, tp->end - tp->start);
 			err = pthread_create(&tp->thr, NULL, tile_processor, tp);
 			if (err) {
 				fprintf(stderr, "z %d: pthread_create: %s (%d)\n",
