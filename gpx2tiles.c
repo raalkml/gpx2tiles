@@ -49,6 +49,9 @@ static double no_lines_speed = 1.0; /* kph */
 
 static int set_speed = INT_MIN;
 
+#define TILE_W (256)
+#define TILE_H (256)
+
 static const struct { int kph, clr; } spdclr[] = {
 	{ 0, gdTrueColor(0x00, 0x00, 0x7f) },
 	{10, gdTrueColor(0xcf, 0x00, 0x00) }, // darkred
@@ -138,8 +141,8 @@ static struct xy getPixelPosForCoordinates(const struct gpx_latlon *loc,
 	struct projection proj = Project(get_tile_xy(loc, z), z);
 
 	return (struct xy){
-		.x = (loc->lon - proj.w) * 256 /  (proj.e - proj.w),
-		.y = (loc->lat - proj.n) * 256 / (proj.s - proj.n),
+		.x = (loc->lon - proj.w) * TILE_W /  (proj.e - proj.w),
+		.y = (loc->lat - proj.n) * TILE_H / (proj.s - proj.n),
 	};
 }
 
@@ -208,8 +211,8 @@ static struct tile *alloc_tile(const struct xy *xy, int z)
 		} else {
 			tile = slist_stack_pop(&free_tiles);
 			if (tile->img) {
-				gdImageFilledRectangle(tile->img, 0, 0, 256, 256, 0);
-				gdImageFilledRectangle(tile->img, 0, 0, 256, 256, transparent);
+				gdImageFilledRectangle(tile->img, 0, 0, TILE_W, TILE_H, 0);
+				gdImageFilledRectangle(tile->img, 0, 0, TILE_W, TILE_H, transparent);
 				zoom_levels[z].image_cnt++;
 			}
 		}
@@ -259,12 +262,12 @@ static struct tile *open_tile(struct tile *tile, int z)
 		fclose(fp);
 	}
 	if (!tile->img) {
-		tile->img = gdImageCreateTrueColor(256, 256);
+		tile->img = gdImageCreateTrueColor(TILE_W, TILE_H);
 		gdImageColorTransparent(tile->img, transparent);
-		gdImageFilledRectangle(tile->img, -1, -1, 256, 256, transparent);
+		gdImageFilledRectangle(tile->img, -1, -1, TILE_W, TILE_H, transparent);
 		if (drop_shadows) {
-			gdImageLine(tile->img, 0, 255, 255, 255, SHADOW);
-			gdImageLine(tile->img, 255, 0, 255, 255, SHADOW);
+			gdImageLine(tile->img, 0, TILE_H - 1, TILE_W - 1, TILE_H - 1, SHADOW);
+			gdImageLine(tile->img, TILE_W - 1, 0, TILE_W - 1, TILE_H - 1, SHADOW);
 		}
 		zoom_levels[z].image_cnt++;
 	}
@@ -387,10 +390,10 @@ static int intersects(struct xy p1, struct xy p2, struct xy p3, struct xy p4)
 
 static int crossing_tile(int x1, int y1, int x2, int y2)
 {
-	if (intersects(XY(x1, y1), XY(x2, y2), XY(0, 0), XY(255, 0)) ||
-	    intersects(XY(x1, y1), XY(x2, y2), XY(0, 0), XY(0, 255)) ||
-	    intersects(XY(x1, y1), XY(x2, y2), XY(255, 0), XY(255, 255)) ||
-	    intersects(XY(x1, y1), XY(x2, y2), XY(0, 255), XY(255, 255)))
+	if (intersects(XY(x1, y1), XY(x2, y2), XY(0, 0), XY(TILE_W-1, 0)) ||
+	    intersects(XY(x1, y1), XY(x2, y2), XY(0, 0), XY(0, TILE_H - 1)) ||
+	    intersects(XY(x1, y1), XY(x2, y2), XY(TILE_W-1, 0), XY(TILE_W-1, TILE_H - 1)) ||
+	    intersects(XY(x1, y1), XY(x2, y2), XY(0, TILE_H - 1), XY(TILE_W-1, TILE_H - 1)))
 		return 1;
 	return 0;
 }
@@ -514,10 +517,10 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 		int x, y;
 		for (x = ptile->xy.x; ; x += dx > 0 ? 1: -1) {
 			for (y = ptile->xy.y; ; y += dy > 0 ? 1 : -1) {
-				int x1 = ppix.x - 256 * (x - ptile->xy.x);
-				int y1 = ppix.y - 256 * (y - ptile->xy.y);
-				int x2 = pix.x - 256 * (x - tile->xy.x);
-				int y2 = pix.y - 256 * (y - tile->xy.y);
+				int x1 = ppix.x - TILE_W * (x - ptile->xy.x);
+				int y1 = ppix.y - TILE_H * (y - ptile->xy.y);
+				int x2 = pix.x - TILE_W * (x - tile->xy.x);
+				int y2 = pix.y - TILE_H * (y - tile->xy.y);
 
 				if (crossing_tile(x1, y1, x2, y2)) {
 					struct xy ixy = { .x = x, .y = y };
