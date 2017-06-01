@@ -708,6 +708,31 @@ static void *loader(void *arg)
 	}
 }
 
+struct tile_proc
+{
+	pthread_t thr;
+	struct gpx_file *files;
+	int start, end;
+	const int *order;
+};
+
+static void *tile_processor(void *arg)
+{
+	const struct tile_proc *tp = arg;
+	int i;
+
+	for (i = tp->start; i < tp->end; ++i) {
+		int z = tp->order[i];
+
+		make_tiles(tp->files, z);
+		printf("z %2d (%d tiles)\n", z, zoom_levels[z].tile_cnt);
+		fflush(stdout);
+		save_zoom_level(z);
+		free_zoom_level(z);
+	}
+	return NULL;
+}
+
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
@@ -970,42 +995,37 @@ int main(int argc, char *argv[])
 	} else {
 		int zooms = zoom_max - zoom_min + 1;
 		int order[ZOOM_MAX];
+		struct tile_proc *tp;
 		int a, b, i;
+
 		for (a = zoom_min, b = zoom_max, i = 0; i < zooms; ++i)
 			order[i] = i & 1 ? a++ : b--;
-		if (parallel > zooms)
-			parallel = zooms;
-		pid_t *pid = calloc(parallel, sizeof(pid_t)), *ppid = pid, *p;
-		for (i = 0; i < zooms;) {
-			switch (*ppid = fork()) {
-			case 0:
-				for (b = i + zooms / parallel; i < b; ++i) {
-					z = order[i];
-					make_tiles(files.head, z);
-					printf("z %d (%d tiles)\n", z,
-					       zoom_levels[z].tile_cnt);
-					fflush(stdout);
-					save_zoom_level(z);
-					free_zoom_level(z);
-				}
-				exit(0);
-			case -1:
-				fprintf(stderr, "z %d: fork: %s\n", order[i],
-					strerror(errno));
-				i = INT_MAX;
-				break;
-			default:
-				i += zooms / parallel;
-				++ppid;
+		parallel = min(parallel, zooms);
+		tp = calloc(parallel, sizeof(*tp));
+		for (i = 0, a = 0; i < zooms;) {
+			int err;
+
+			tp[a].start = i;
+			tp[a].end = a == parallel - 1 ? zooms :
+				min(i + zooms / parallel, zooms);
+			tp[a].order = order;
+			tp[a].files = files.head;
+			err = pthread_create(&tp[a].thr, NULL, tile_processor, tp + a);
+			if (err) {
+				fprintf(stderr, "z %d: pthread_create: %s (%d)\n",
+					order[i], strerror(err), err);
 				break;
 			}
+			i = tp[a++].end;
 		}
-		for (p = pid; p < ppid; ++p) {
-			int status;
-
-			waitpid(*p, &status, 0);
+		for (i = a; i--;) {
+			int err = pthread_join(tp[i].thr, NULL);
+			if (err) {
+				fprintf(stderr, "pthread_join: %s (%d)\n",
+					strerror(err), err);
+			}
 		}
-		free(pid);
+		free(tp);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	duration = timespec_sub(end, start);
