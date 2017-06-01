@@ -201,6 +201,7 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 	return tile;
 }
 
+static pthread_mutex_t free_tiles_lock = PTHREAD_MUTEX_INITIALIZER;
 static SLIST_STACK_DEFINE(struct tile, free_tiles);
 #define GD_ANTIALIAS_COLOR (gdTrueColorAlpha(0, 255, 0, 0))
 
@@ -218,6 +219,7 @@ static struct tile *alloc_tile(const struct xy *xy, int z)
 		const int transparent = gdTrueColorAlpha(0, 0, 0, gdAlphaTransparent);
 		unsigned h = hash_xy(xy);
 	
+		pthread_mutex_lock(&free_tiles_lock);
 		if (!free_tiles.head) {
 			tile = malloc(sizeof(*tile));
 			tile->img = NULL;
@@ -229,6 +231,7 @@ static struct tile *alloc_tile(const struct xy *xy, int z)
 				zoom_levels[z].image_cnt++;
 			}
 		}
+		pthread_mutex_unlock(&free_tiles_lock);
 		tile->has_speed = 0;
 		tile->xy = *xy;
 		tile->loc.lat = tiley2lat(xy->y, z);
@@ -242,7 +245,9 @@ static struct tile *alloc_tile(const struct xy *xy, int z)
 }
 static void free_tile(struct tile *tile)
 {
+	pthread_mutex_lock(&free_tiles_lock);
 	slist_push(&free_tiles, tile);
+	pthread_mutex_unlock(&free_tiles_lock);
 }
 
 static struct tile *get_tile_at(const struct xy *xy, int z)
