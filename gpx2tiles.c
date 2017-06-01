@@ -12,6 +12,8 @@
 #include <getopt.h>
 #include <pthread.h>
 #include <ctype.h>
+#include <errno.h>
+#include <sys/wait.h>
 #include <gd.h>
 #include <gdfonts.h>
 #include "slist.h"
@@ -932,19 +934,61 @@ int main(int argc, char *argv[])
 
 	prepare_zoom_levels();
 	clock_gettime(CLOCK_MONOTONIC, &start);
-	for (z = zoom_min; z <= zoom_max; ++z) {
-		printf("z %d ", z); fflush(stdout);
-		make_tiles(files.head, z);
-		printf("(%d tiles, dx %f dy %f)%s", zoom_levels[z].tile_cnt,
-		       zoom_levels[z].xunit, zoom_levels[z].yunit,
-		       verbose ? "\n" : "");
-		fflush(stdout);
-		if (verbose > 2)
-			dump_zoom_level(z);
-		save_zoom_level(z);
-		free_zoom_level(z);
-		if (!verbose)
-			printf(" ... saved\n");
+	if (parallel == 1) {
+		for (z = zoom_min; z <= zoom_max; ++z) {
+			printf("z %d ", z); fflush(stdout);
+			make_tiles(files.head, z);
+			printf("(%d tiles, dx %f dy %f)%s",
+			       zoom_levels[z].tile_cnt,
+			       zoom_levels[z].xunit, zoom_levels[z].yunit,
+			       verbose ? "\n" : "");
+			fflush(stdout);
+			if (verbose > 2)
+				dump_zoom_level(z);
+			save_zoom_level(z);
+			free_zoom_level(z);
+			if (!verbose)
+				printf(" ... saved\n");
+		}
+	} else {
+		int zooms = zoom_max - zoom_min + 1;
+		int order[ZOOM_MAX];
+		int a, b, i;
+		for (a = zoom_min, b = zoom_max, i = 0; i < zooms; ++i)
+			order[i] = i & 1 ? a++ : b--;
+		if (parallel > zooms)
+			parallel = zooms;
+		pid_t *pid = calloc(parallel, sizeof(pid_t)), *ppid = pid, *p;
+		for (i = 0; i < zooms;) {
+			switch (*ppid = fork()) {
+			case 0:
+				for (b = i + zooms / parallel; i < b; ++i) {
+					z = order[i];
+					make_tiles(files.head, z);
+					printf("z %d (%d tiles)\n", z,
+					       zoom_levels[z].tile_cnt);
+					fflush(stdout);
+					save_zoom_level(z);
+					free_zoom_level(z);
+				}
+				exit(0);
+			case -1:
+				fprintf(stderr, "z %d: fork: %s\n", order[i],
+					strerror(errno));
+				i = INT_MAX;
+				break;
+			default:
+				i += zooms / parallel;
+				++ppid;
+				break;
+			}
+		}
+		for (p = pid; p < ppid; ++p) {
+			int status;
+
+			waitpid(*p, &status, 0);
+		}
+		free(pid);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	duration = timespec_sub(end, start);
