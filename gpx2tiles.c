@@ -449,7 +449,7 @@ static int speed_kph_to_clridx(double kph)
 	for (speed = 0; speed < (int)countof(spdclr); ++speed)
 		if ((int)kph <= spdclr[speed].kph)
 			break;
-	if (speed > countof(spdclr))
+	if (speed >= countof(spdclr))
 		speed = countof(spdclr) - 1;
 	return speed;
 }
