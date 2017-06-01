@@ -24,6 +24,16 @@
 
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define nabs(a) ({int __a = (a); __a < 0 ? -__a : __a;})
+#define min(a, b) ({ \
+                  typeof(a) __a = (a); \
+                  typeof(a) __b = (b); \
+                  __a < __b ? __a : __b; \
+                  })
+#define max(a, b) ({ \
+                  typeof(a) __a = (a); \
+                  typeof(a) __b = (b); \
+                  __a > __b ? __a : __b; \
+                  })
 
 #define ZOOM_MAX (19)
 
