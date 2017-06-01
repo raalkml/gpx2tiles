@@ -719,16 +719,17 @@ struct tile_proc
 static void *tile_processor(void *arg)
 {
 	const struct tile_proc *tp = arg;
-	int i;
+	int z;
 
-	for (i = tp->start; i < tp->end; ++i) {
-		int z = tp->order[i];
+	for (z = tp->start; z < tp->end; ++z) {
+		int tile_cnt;
 
 		make_tiles(tp->files, z);
-		printf("z %2d (%d tiles)\n", z, zoom_levels[z].tile_cnt);
-		fflush(stdout);
+		tile_cnt = zoom_levels[z].tile_cnt;
 		save_zoom_level(z);
 		free_zoom_level(z);
+		printf("z %2d (%d tiles)\n", z, tile_cnt);
+		fflush(stdout);
 	}
 	return NULL;
 }
@@ -994,38 +995,55 @@ int main(int argc, char *argv[])
 		}
 	} else {
 		int zooms = zoom_max - zoom_min + 1;
-		int order[ZOOM_MAX];
-		struct tile_proc *tp;
-		int a, b, i;
+		struct tile_proc *tp, *tproc;
+		uint64_t tiles_per_thread = 0;
 
-		for (a = zoom_min, b = zoom_max, i = 0; i < zooms; ++i)
-			order[i] = i & 1 ? a++ : b--;
+		for (z = zoom_min; z <= zoom_max; ++z)
+			tiles_per_thread += 1 << (2 * z);
 		parallel = min(parallel, zooms);
-		tp = calloc(parallel, sizeof(*tp));
-		for (i = 0, a = 0; i < zooms;) {
+		tiles_per_thread /= parallel;
+		tproc = calloc(parallel, sizeof(*tproc));
+		for (tp = tproc, z = zoom_min; z <= zoom_max; ++tp) {
 			int err;
+			uint64_t tiles;
 
-			tp[a].start = i;
-			tp[a].end = a == parallel - 1 ? zooms :
-				min(i + zooms / parallel, zooms);
-			tp[a].order = order;
-			tp[a].files = files.head;
-			err = pthread_create(&tp[a].thr, NULL, tile_processor, tp + a);
+			tp->start = z;
+			tiles = 1 << (2 * z++);
+			tp->end = z;
+			while (z < zoom_max && tiles < tiles_per_thread) {
+				uint64_t wrk = tiles + (1 << (2 * z));
+				/* next zoom will overload this thread */
+				if (wrk > tiles_per_thread)
+					break;
+				/* leave some work for other threads */
+				if (zoom_max - z + 1 <= parallel - (tp - tproc))
+					break;
+				tiles = wrk;
+				tp->end = ++z;
+			}
+			if (tp - tproc == parallel - 1)
+				tp->end = zoom_max + 1;
+			tp->files = files.head;
+			//printf("%d z %d(%d) %llu%%\n", (int)(tp - tproc),
+			//       tp->start, tp->end - tp->start,
+			//       tiles > tiles_per_thread ? 999ull :
+			//       tiles * 100llu / tiles_per_thread);
+			err = pthread_create(&tp->thr, NULL, tile_processor, tp);
 			if (err) {
 				fprintf(stderr, "z %d: pthread_create: %s (%d)\n",
-					order[i], strerror(err), err);
+					z, strerror(err), err);
 				break;
 			}
-			i = tp[a++].end;
+			z = tp->end;
 		}
-		for (i = a; i--;) {
-			int err = pthread_join(tp[i].thr, NULL);
+		while (tp-- > tproc) {
+			int err = pthread_join(tp->thr, NULL);
 			if (err) {
 				fprintf(stderr, "pthread_join: %s (%d)\n",
 					strerror(err), err);
 			}
 		}
-		free(tp);
+		free(tproc);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	duration = timespec_sub(end, start);
