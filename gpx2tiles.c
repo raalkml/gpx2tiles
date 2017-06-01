@@ -334,8 +334,10 @@ static void flush_tile(struct tile *tile, int z, int verbosity)
 
 static void close_tile(struct tile *tile, int z)
 {
-	if (tile->refcnt-- < 0)
+	if (tile->refcnt-- < 0) {
 		fprintf(stderr, "Used closed tile %d,%d\n", tile->xy.x, tile->xy.y);
+		abort();
+	}
 
 	unsigned int h;
 	int need = zoom_levels[z].image_cnt - z_max_tiles;
