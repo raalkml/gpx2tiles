@@ -45,6 +45,7 @@ static int z_no_lines = 7;
 static int z_max_tiles = INT_MAX;
 static int z_thickness[ZOOM_MAX + 1];
 
+/* Do not draw lines if the speed between points is below that: */
 static double no_lines_speed = 1.0; /* kph */
 
 static int set_speed = INT_MIN;
@@ -434,6 +435,38 @@ static int speed_kph_to_clridx(double kph)
 	return speed;
 }
 
+static void diag_draw_tile_speed(struct tile *tile, const struct gpx_point *pt,
+				 const struct xy pix)
+{
+	char speed[8];
+	int xx, yy;
+
+	tile->has_speed = 1;
+	snprintf(speed, sizeof(speed), "%.1f", pt->speed * 3.6);
+	gdImageString (tile->img, gdFontSmall, 0, 0,
+		       (unsigned char *)speed, SPEED_CLR);
+	xx = gdFontSmall->w * strlen(speed);
+	yy = gdFontSmall->h + 1;
+	gdImageLine(tile->img, 0, yy, xx, yy, SPEED_CLR);
+	gdImageLine(tile->img, xx, yy, pix.x, pix.y, SPEED_CLR);
+}
+
+static void diag_draw_point(int z, struct tile *tile,
+			    const struct gpx_point *pt,
+			    const struct xy pix,
+			    int color)
+{
+	if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
+		int d = (int)floor(pt->pdop * 3);
+
+		gdImageEllipse(tile->img, pix.x, pix.y,
+			       d, d, (20 << 24) | color);
+	}
+	else if (drop_shadows)
+		gdImageEllipse(tile->img, pix.x, pix.y,
+			       5, 5, (20 << 24) | SHADOW);
+}
+
 static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 {
 	struct gpx_point *pt, *ppt;
@@ -474,32 +507,18 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
+		/*
+		 * Don't draw lines at high zoom levels, because they all are
+		 * on the same pixel
+		 */
 		if (z < z_no_lines)
 			goto close_tiles;
 
 		gdImageSetAntiAliased(tile->img, color);
-		if (z >= 17 && (pt->flags & GPX_PT_PDOP) && pt->pdop > 1.8) {
-			int d = (int)floor(pt->pdop * 3);
-
-			gdImageEllipse(tile->img, pix.x, pix.y,
-				       d, d, (20 << 24) | color);
-		}
-		else if (drop_shadows)
-			gdImageEllipse(tile->img, pix.x, pix.y,
-				       5, 5, (20 << 24) | SHADOW);
-		if (draw_speed && !tile->has_speed) {
-			char speed[8];
-			int xx, yy;
-
-			tile->has_speed = 1;
-			snprintf(speed, sizeof(speed), "%.1f", pt->speed * 3.6);
-			gdImageString (tile->img, gdFontSmall, 0, 0,
-				       (unsigned char *)speed, SPEED_CLR);
-			xx = gdFontSmall->w * strlen(speed);
-			yy = gdFontSmall->h + 1;
-			gdImageLine(tile->img, 0, yy, xx, yy, SPEED_CLR);
-			gdImageLine(tile->img, xx, yy, pix.x, pix.y, SPEED_CLR);
-		}
+		diag_draw_point(z, tile, pt, pix, color);
+		if (draw_speed && !tile->has_speed)
+			diag_draw_tile_speed(tile, pt, pix);
+		/* Don't draw slow segments */
 		if ((pt->flags & GPX_PT_SPEED) &&
 		    pt->speed * 3.6 < no_lines_speed)
 			goto close_tiles;
