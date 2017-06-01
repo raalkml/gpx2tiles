@@ -437,37 +437,34 @@ static int speed_kph_to_clridx(double kph)
 static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 {
 	struct gpx_point *pt, *ppt;
+	struct xy ppix = { 0 }, pxy;
 
-	for (pt = ppt = points; pt; ppt = pt, pt = pt->next) {
+	for (pt = ppt = points; pt; pt = pt->next) {
+		int color;
+		struct tile *ptile;
+		struct xy pix = {0}; // ???
 		struct xy xy = get_tile_xy(&pt->loc, z);
 		struct tile *tile = get_tile_at(&xy, z);
 
 		if (!tile)
-			continue;
-
+			goto setppt;
 		open_tile(tile, z);
 		tile->point_cnt++;
-		struct xy pix = getPixelPosForCoordinates(&pt->loc, z);
-		struct xy ppix = pix;
-		struct xy pxy = xy;
-		struct tile *ptile;
-
-		if (ppt == pt)
+		pix = getPixelPosForCoordinates(&pt->loc, z);
+		if (ppt == pt) {
 			ptile = open_tile(tile, z);
-		else {
-			pxy = get_tile_xy(&ppt->loc, z);
+			ppix = pix;
+			pxy = xy;
+		} else {
 			ptile = get_tile_at(&pxy, z);
-			ppix = getPixelPosForCoordinates(&ppt->loc, z);
 			open_tile(ptile, z);
 		}
-
-		int color;
-
 		if (z_no_lines == HEATMAP_MODE) {
 			color = gdImageGetTrueColorPixel(tile->img, pix.x, pix.y);
 			color = color ? intensify(color, 0.05) : heatmapclr;
 		} else {
 			int speed = 0;
+
 			if (!bad_src && (pt->flags & GPX_PT_SPEED))
 				speed = speed_kph_to_clridx(pt->speed * 3.6);
 			if (set_speed != INT_MIN)
@@ -544,6 +541,10 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 	close_tiles:
 		close_tile(ptile, z);
 		close_tile(tile, z);
+	setppt:
+		ppix = pix;
+		pxy = xy;
+		ppt = pt;
 	}
 }
 
