@@ -207,7 +207,7 @@ static struct segtab_entry *parse_trkpt(xmlNode *xpt, struct gpx_point *pt, stru
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "sat") == 0) {
 			pt->flags |= GPX_PT_SAT;
 			s = xmlNodeGetContent(xpt);
-			pt->speed = strtol(ASCII s, NULL, 10);
+			pt->sat = strtol(ASCII s, NULL, 10);
 			goto frees;
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "ele") == 0) {
 			pt->flags |= GPX_PT_ELE;
