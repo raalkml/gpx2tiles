@@ -400,7 +400,7 @@ static int turn(struct xy p1, struct xy p2, struct xy p3)
 	int e = p3.x; int f = p3.y;
 	int A = (f - b) * (c - a);
 	int B = (d - b) * (e - a);
-	return A > B? 1 : A < B ? -1 : 0;
+	return A > B ? 1 : A < B ? -1 : 0;
 }
 
 static int intersects(struct xy p1, struct xy p2, struct xy p3, struct xy p4)
