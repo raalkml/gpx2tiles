@@ -197,7 +197,8 @@ static struct segtab_entry *parse_trkpt(xmlNode *xpt, struct gpx_point *pt, stru
 			goto frees;
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "src") == 0) {
 			s = xmlNodeGetContent(xpt);
-			e = get_segtab(segs, (char *)s);
+			if (segs)
+				e = get_segtab(segs, (char *)s);
 			goto frees;
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "speed") == 0) {
 			pt->flags |= GPX_PT_SPEED;
@@ -408,6 +409,40 @@ void put_trk_segment(struct gpx_data *gpx, struct gpx_segment *seg)
 	slist_append(&gpx->segments, seg);
 }
 
+static void process_wpt(struct gpx_data *gpx, xmlNode *xe)
+{
+	char *err, *nptr;
+	struct gpx_point *pt;
+
+	pt = new_trk_point();
+	nptr = ASCII xmlGetProp(xe, BAD_CAST "lat");
+	pt->loc.lat = strtod(nptr, &err);
+	xmlFree(nptr);
+	if ((pt->loc.lat == 0.0 && nptr == err) || pt->loc.lat == HUGE_VAL)
+		goto fail;
+	nptr = ASCII xmlGetProp(xe, BAD_CAST "lon");
+	pt->loc.lon = strtod(nptr, &err);
+	xmlFree(nptr);
+	if ((pt->loc.lon == 0.0 && nptr == err) || pt->loc.lon == HUGE_VAL)
+		goto fail;
+	pt->flags |= GPX_PT_LATLON;
+	parse_trkpt(xe, pt, NULL);
+	if (!(pt->flags & GPX_PT_TIME))
+		pt->time[0] = '\0';
+	slist_append(&gpx->wpts, pt);
+	gpx->points_cnt++;
+	return;
+fail:
+	free_trk_point(pt);
+}
+
+static void free_wpt(struct gpx_point *pt)
+{
+	if (!pt)
+		return;
+	free_trk_point(pt);
+}
+
 struct gpx_data *gpx_read_file(const char *path)
 {
 	xmlNode *xe;
@@ -417,6 +452,7 @@ struct gpx_data *gpx_read_file(const char *path)
 	gpx->path = strdup(path);
 	gpx->points_cnt = 0;
 	slist_init(&gpx->segments);
+	slist_init(&gpx->wpts);
 	memset(gpx->time, 0, sizeof(gpx->time));
 
 	xml = xmlReadFile(gpx->path,
@@ -440,7 +476,7 @@ struct gpx_data *gpx_read_file(const char *path)
 			continue;
 		}
 		if (xmlStrcasecmp(xe->name, BAD_CAST "wpt") == 0) {
-			// fprintf(stderr, "discarded waypoint (not implemented)\n");
+			process_wpt(gpx, xe);
 			continue;
 		}
 		if (xmlStrcasecmp(xe->name, BAD_CAST "trk") != 0)
@@ -461,6 +497,8 @@ void gpx_free(struct gpx_data *gpx)
 {
 	while (gpx->segments.head)
 		free_trk_segment(slist_pop(&gpx->segments));
+	while (gpx->wpts.head)
+		free_wpt(slist_pop(&gpx->wpts));
 	free(gpx->path);
 	free(gpx);
 }

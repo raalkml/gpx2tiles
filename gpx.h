@@ -7,6 +7,7 @@ struct gpx_latlon
 };
 
 struct gpx_segment;
+struct gpx_point;
 
 struct gpx_data
 {
@@ -14,10 +15,9 @@ struct gpx_data
 	char time[24];
 
 	struct { struct gpx_segment *head, **tail; } segments;
+	struct { struct gpx_point *head, **tail; } wpts;
 	int points_cnt, track_cnt;
 };
-
-struct gpx_point;
 
 struct gpx_segment
 {
