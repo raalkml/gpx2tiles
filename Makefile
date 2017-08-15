@@ -4,12 +4,16 @@ odir := O
 target = gpx2tiles
 ofiles = $(patsubst %.c,$(odir)/%.o,$(sources))
 
+LIBXML_CFLAGS := $(shell pkg-config --cflags libxml-2.0)
+LIBXML_LIBS := $(shell pkg-config --libs libxml-2.0)
+LIBGD_CFLAGS := $(shell pkg-config --cflags gdlib)
+LIBGD_LIBS := $(shell pkg-config --libs gdlib)
+
 CC := gcc
 CFLAGS := -Wall -ggdb -O3
-CPPFLAGS := $(shell pkg-config --cflags gdlib) $(shell pkg-config --cflags libxml-2.0)
+CPPFLAGS := $(LIBGD_CFLAGS) $(LIBXML_CFLAGS)
 LDFLAGS := -Wall -ggdb -O3
-LDLIBS := $(shell pkg-config --libs gdlib) $(shell pkg-config --libs libxml-2.0) \
-    -lm -lpthread
+LDLIBS := $(LIBGD_LIBS) $(LIBXML_LIBS) -lm -lpthread
 
 build: $(target)
 
