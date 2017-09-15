@@ -25,6 +25,7 @@ static inline size_t strlcpy(char* tgt, const char* src, size_t size)
 
 const char GPX_SRC_GPS[] = "gps";
 const char GPX_SRC_NETWORK[] = "network";
+const char GPX_SRC_WAYPOINT[] = "<wpt>";
 const char GPX_SRC_UNKNOWN[] = "";
 
 static int static_gpx_src(const char *s)

@@ -59,6 +59,7 @@ struct gpx_point
 
 extern const char GPX_SRC_GPS[];
 extern const char GPX_SRC_NETWORK[];
+extern const char GPX_SRC_WAYPOINT[];
 extern const char GPX_SRC_UNKNOWN[];
 
 struct gpx_point *new_trk_point(void);

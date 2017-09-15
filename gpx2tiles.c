@@ -54,6 +54,7 @@ static int highlight_tile_cross; /* use different color to highlight crossing a 
 #define HEATMAP_MODE ((int)(~0u >> 1))
 /* Do not draw lines at zoom levels below z_no_lines */
 static int z_no_lines = 7;
+static int z_no_wpts = 16;
 static int z_max_tiles = INT_MAX;
 static int z_thickness[ZOOM_MAX + 1];
 
@@ -87,6 +88,9 @@ static const struct { int kph, clr; } spdclr[] = {
 };
 
 static const int heatmapclr = gdTrueColor(0x06, 0x1a, 0x5b);
+
+static int point_circle_color = gdTrueColor(0x06, 0x1a, 0x5b);
+static int point_circle_diameter = 9;
 
 struct xy
 {
@@ -486,7 +490,96 @@ static void diag_draw_point(int z, struct tile *tile,
 			       5, 5, (20 << 24) | SHADOW);
 }
 
-static void draw_track_points(struct gpx_point *points, int z, int bad_src)
+struct neigh_tile {
+	struct xy xy, pix;
+	struct xy lt, rb;
+};
+
+static void xy_out_of_range(struct xy *xy, int z)
+{
+	int max = (1 << z) - 1;
+	if (xy->x < 0)
+		xy->x = 0;
+	if (xy->y < 0)
+		xy->y = 0;
+	if (xy->x > max)
+		xy->x = max;
+	if (xy->y > max)
+		xy->y = max;
+}
+
+static struct neigh_tile neigh_tile_circle(int z, const struct tile *tile,
+					   const struct xy pix,
+					   int radius)
+{
+	struct neigh_tile n;
+	int d;
+
+	n.lt = n.rb = tile->xy;
+	d = pix.x - radius;
+	if (d < 0)
+		n.lt.x += d / TILE_W - 1;
+	d = pix.x + radius;
+	if (d > TILE_W)
+		n.rb.x += d / TILE_W;
+	d = pix.y - radius;
+	if (d < 0)
+		n.lt.y += d / TILE_H - 1;
+	d = pix.y + radius;
+	if (d > TILE_W)
+		n.rb.y += d / TILE_H;
+	xy_out_of_range(&n.lt, z);
+	xy_out_of_range(&n.rb, z);
+	n.xy = n.lt;
+	n.pix.x = pix.x + (radius + TILE_W) / TILE_W;
+	n.pix.y = pix.y + (radius + TILE_H) / TILE_H;
+	return n;
+}
+
+static int next_neigh_tile(struct neigh_tile *n)
+{
+	struct xy pix;
+	if (n->xy.x < n->rb.x) {
+		n->xy.x++;
+		pix.x = -TILE_W;
+		pix.y = 0;
+	} else {
+		if (n->xy.y == n->rb.y)
+			return 0;
+		n->xy.x = n->lt.x;
+		n->xy.y++;
+		pix.x = TILE_W * (n->rb.x - n->lt.x);
+		pix.y = -TILE_H;
+	}
+	n->pix.x += pix.x;
+	n->pix.y += pix.y;
+	return 1;
+}
+
+static void draw_point_circle(int z, struct tile *tile,
+			      const struct gpx_point *pt,
+			      const struct xy pix,
+			      int color)
+{
+	struct neigh_tile n = neigh_tile_circle(z, tile, pix, point_circle_diameter);
+
+	do {
+		tile = get_tile_at(&n.xy, z);
+		if (!tile)
+			continue;
+		open_tile(tile, z);
+		gdImageFilledEllipse(tile->img, n.pix.x, n.pix.y,
+				     point_circle_diameter,
+				     point_circle_diameter,
+				     point_circle_color);
+		close_tile(tile, z);
+	} while (next_neigh_tile(&n));
+}
+
+#define DRAW_TRKPTR_NO_LINES (1u)
+#define DRAW_TRKPTR_BADSRC (2u)
+#define DRAW_TRKPTR_CIRCLE (4u)
+static void draw_track_points(struct gpx_point *points, int z, unsigned flags)
 {
 	struct gpx_point *pt, *ppt;
 	struct xy ppix = { 0 }, pxy;
@@ -517,7 +610,7 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 		} else {
 			int speed = 0;
 
-			if (!bad_src && (pt->flags & GPX_PT_SPEED))
+			if (!(flags & DRAW_TRKPTR_BADSRC) && (pt->flags & GPX_PT_SPEED))
 				speed = speed_kph_to_clridx(pt->speed * 3.6);
 			if (set_speed != INT_MIN)
 				speed = speed_kph_to_clridx((double)set_speed);
@@ -526,17 +619,14 @@ static void draw_track_points(struct gpx_point *points, int z, int bad_src)
 
 		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
-		/*
-		 * Don't draw lines at high zoom levels, because they all are
-		 * on the same pixel
-		 */
-		if (z < z_no_lines)
-			goto close_tiles;
-
 		gdImageSetAntiAliased(tile->img, color);
+		if (flags & DRAW_TRKPTR_CIRCLE)
+			draw_point_circle(z, tile, pt, pix, color);
 		diag_draw_point(z, tile, pt, pix, color);
 		if (draw_speed && !tile->has_speed)
 			diag_draw_tile_speed(tile, pt, pix);
+		if (flags & DRAW_TRKPTR_NO_LINES)
+			goto close_tiles;
 		/* Don't draw slow segments */
 		if ((pt->flags & GPX_PT_SPEED) &&
 		    pt->speed * 3.6 < no_lines_speed)
@@ -595,13 +685,19 @@ static void make_tiles(struct gpx_file *files, int z)
 
 		slist_for_each(seg, &f->gpx->segments) {
 			/*
-			 * This GPS data source is not reliable and precise
-			 * enough to use it for speed analysis.
+			 * Th GPS data source GPX_SRC_NETWORK is not reliable
+			 * and precise enough to use it for speed analysis.
+			 *
+			 * Don't draw lines at high zoom levels, because they
+			 * all are on the same pixel.
 			 */
-			int bad_src = seg->src == GPX_SRC_NETWORK;
-
-			draw_track_points(seg->points.head, z, bad_src);
+			draw_track_points(seg->points.head, z,
+					  (z < z_no_lines ? DRAW_TRKPTR_NO_LINES : 0) |
+					  (seg->src == GPX_SRC_NETWORK ? DRAW_TRKPTR_BADSRC : 0));
 		}
+		if (z > z_no_wpts)
+			draw_track_points(f->gpx->wpts.head, z,
+					  DRAW_TRKPTR_NO_LINES | DRAW_TRKPTR_CIRCLE);
 		if (verbose > 0)
 			printf("z %2d %s (%d points, tiles %d)\n", z, f->gpx->path,
 			       f->gpx->points_cnt,
@@ -749,7 +845,8 @@ static void usage(const char *argv0)
 		"  -I delete zoom directories before saving the tiles\n"
 		"  -T <max-tiles> max number of tiles to keep in memory\n"
 		"  -j <jobs> number of tracks to load in parallel\n"
-		"  -L <line-zoom> zoom level above which stop drawing lines (only dots)\n"
+		"  -L <line-zoom> zoom level above which stop drawing lines (only dots) (default %d)\n"
+		"  -P <line-zoom> zoom level above which stop drawing waypoints (default %d)\n"
 		"  -H heatmap mode\n"
 		"  -0 read the list of GPX files from stdin, NUL-terminated\n"
 		"     The files given on command-line are processed first\n"
@@ -763,8 +860,11 @@ static void usage(const char *argv0)
 		"  -t <zoom>:<line-thickness>[+] set thickness for lines at the level\n"
 		"     extends till the last zoom level if ends with a \"+\", i.e. -t 12:3+\n"
 		"  -S <kph> assume the speed to be always <kph>\n"
+		"  -p <diameter> diameter (in px) for <wpt> circles\n"
 		"  -h gives this message\n",
-		argv0);
+		argv0,
+		z_no_lines,
+		z_no_wpts);
 }
 
 int main(int argc, char *argv[])
@@ -779,7 +879,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:p:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -826,6 +926,9 @@ int main(int argc, char *argv[])
 		case 'L':
 			z_no_lines = strtol(optarg, NULL, 0);
 			break;
+		case 'P':
+			z_no_wpts = strtol(optarg, NULL, 0);
+			break;
 		case 'H':
 			z_no_lines = HEATMAP_MODE;
 			break;
@@ -848,6 +951,9 @@ int main(int argc, char *argv[])
 				highlight_tile_cross = 1;
 			if (opt & 0x04)
 				draw_speed = 1;
+			break;
+		case 'p':
+			point_circle_diameter = strtol(optarg, NULL, 0);
 			break;
 		case 'v':
 			++verbose;
@@ -1053,6 +1159,7 @@ int main(int argc, char *argv[])
 			gdImageDestroy(t->img);
 		free(t);
 	}
+	gpx_libxml_cleanup();
 	return 0;
 }
 
