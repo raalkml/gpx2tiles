@@ -6,19 +6,20 @@ ofiles = $(patsubst %.c,$(odir)/%.o,$(sources))
 
 CC := gcc
 CFLAGS := -Wall -ggdb -O3
-CPPFLAGS := $(shell pkg-config --cflags gdlib) $(shell pkg-config --cflags libxml-2.0)
+PKG_CFLAGS := $(shell pkg-config --cflags gdlib) $(shell pkg-config --cflags libxml-2.0)
+PKG_LIBS := $(shell pkg-config --libs gdlib) $(shell pkg-config --libs libxml-2.0)
+CPPFLAGS := 
 LDFLAGS := -Wall -ggdb -O3
-LDLIBS := $(shell pkg-config --libs gdlib) $(shell pkg-config --libs libxml-2.0) \
-    -lm -lpthread
+LDLIBS := -lm -lpthread
 
 build: $(target)
 
 $(target): $(ofiles)
-	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
+	$(LINK.o) $^ $(LOADLIBES) $(PKG_LIBS) $(LDLIBS) -o $@
 
 $(odir)/%.o: %.c
 	@mkdir -p '$(odir)'
-	$(COMPILE.c) $(OUTPUT_OPTION) $(CPPFLAGS) $(CFLAGS) $<
+	$(COMPILE.c) $(OUTPUT_OPTION) $(PKG_CFLAGS) $(CPPFLAGS) $(CFLAGS) $<
 
 rebuild: clean
 	$(MAKE) build
