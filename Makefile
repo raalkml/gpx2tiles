@@ -18,11 +18,11 @@ LDLIBS := $(LIBGD_LIBS) $(LIBXML_LIBS) -lm -lpthread
 build: $(target)
 
 $(target): $(ofiles)
-	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
+	$(LINK.o) $^ $(LOADLIBES) $(PKG_LIBS) $(LDLIBS) -o $@
 
 $(odir)/%.o: %.c
 	@mkdir -p '$(odir)'
-	$(COMPILE.c) $(OUTPUT_OPTION) $(CPPFLAGS) $(CFLAGS) $<
+	$(COMPILE.c) $(OUTPUT_OPTION) $(PKG_CFLAGS) $(CPPFLAGS) $(CFLAGS) $<
 
 rebuild: clean
 	$(MAKE) build
