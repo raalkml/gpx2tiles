@@ -11,9 +11,11 @@ LIBGD_LIBS := $(shell pkg-config --libs gdlib)
 
 CC := gcc
 CFLAGS := -Wall -ggdb -O3
-CPPFLAGS := $(LIBGD_CFLAGS) $(LIBXML_CFLAGS)
+CPPFLAGS :=
 LDFLAGS := -Wall -ggdb -O3
-LDLIBS := $(LIBGD_LIBS) $(LIBXML_LIBS) -lm -lpthread
+LDLIBS := -lm -lpthread
+PKG_CFLAGS = $(LIBGD_CFLAGS) $(LIBXML_CFLAGS)
+PKG_LIBS = $(LIBGD_LIBS) $(LIBXML_LIBS)
 
 build: $(target)
 
