@@ -55,6 +55,7 @@ static int highlight_tile_cross; /* use different color to highlight crossing a 
 /* Do not draw lines at zoom levels below z_no_lines */
 static int z_no_lines = 7;
 static int z_no_wpts = 16;
+static int z_heatmap_bigdots = 15; /* draw big dots below this zoom in heatmap mode */
 static int z_max_tiles = INT_MAX;
 static int z_thickness[ZOOM_MAX + 1];
 
@@ -607,6 +608,13 @@ static void draw_track_points(struct gpx_point *points, int z, unsigned flags)
 		if (z_no_lines == HEATMAP_MODE) {
 			color = gdImageGetTrueColorPixel(tile->img, pix.x, pix.y);
 			color = color ? intensify(color, 0.05) : heatmapclr;
+			if (z < z_heatmap_bigdots)
+				gdImageSetPixel(tile->img, pix.x, pix.y, color);
+			else
+				gdImageFilledRectangle(tile->img,
+						       pix.x - 1, pix.y - 1,
+						       pix.x + 1, pix.y + 1,
+						       color);
 		} else {
 			int speed = 0;
 
@@ -615,9 +623,8 @@ static void draw_track_points(struct gpx_point *points, int z, unsigned flags)
 			if (set_speed != INT_MIN)
 				speed = speed_kph_to_clridx((double)set_speed);
 			color = spdclr[speed].clr;
+			gdImageSetPixel(tile->img, pix.x, pix.y, color);
 		}
-
-		gdImageSetPixel(tile->img, pix.x, pix.y, color);
 
 		gdImageSetAntiAliased(tile->img, color);
 		if (flags & DRAW_TRKPTR_CIRCLE)
