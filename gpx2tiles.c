@@ -886,7 +886,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:p:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:p:P:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
