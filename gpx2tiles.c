@@ -894,12 +894,14 @@ int main(int argc, char *argv[])
 	SLIST_DEFINE(struct gpx_file, files);
 	int points_cnt, files_cnt = 0;
 	int stdin_files = 0; /* read zero-terminated list of files from stdin */
-	int parallel = 4;
+	size_t parallel = 4;
 	pthread_t *loaders;
 	int opt;
 
 	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:p:P:c:")) != -1)
 		switch (opt)  {
+			char *p;
+			int z;
 		case '0':
 			stdin_files = 1;
 			break;
@@ -917,25 +919,23 @@ int main(int argc, char *argv[])
 			set_speed = strtol(optarg, NULL, 0);
 			break;
 		case 't':
-			{
-				char *p;
-				int z = strtol(optarg, &p, 0);
-				if (z < 0 || z > ZOOM_MAX) {
-					fprintf(stderr, "Invalid zoom level %s\n",
-						optarg);
-					exit(1);
-				}
-				while (*p && !isdigit(*p))
-					++p;
-				z_thickness[z] = strtol(p, &p, 0);
-				if (!z_thickness[z])
-					z_thickness[z] = 1;
-				if ('+' == *p) {
-					int t = z_thickness[z];
-					for ( ++z; z <= ZOOM_MAX; ++z)
-						z_thickness[z] = t;
-				}
+			z = strtol(optarg, &p, 0);
+			if (z < 0 || z > ZOOM_MAX) {
+				fprintf(stderr, "Invalid zoom level %s\n",
+					optarg);
+				exit(1);
 			}
+			while (*p && !isdigit(*p))
+				++p;
+			z_thickness[z] = strtol(p, &p, 0);
+			if (!z_thickness[z])
+				z_thickness[z] = 1;
+			if ('+' == *p) {
+				int t = z_thickness[z];
+				for ( ++z; z <= ZOOM_MAX; ++z)
+					z_thickness[z] = t;
+			}
+			break;
 		case 'c':
 			fixclr = strtol(optarg, &p, 16);
 			fixclr = gdTrueColor((fixclr >> 16) & 0xff,
@@ -1016,6 +1016,8 @@ int main(int argc, char *argv[])
 	}
 	if (parallel < 1)
 		parallel = 1;
+	if (parallel >= SIZE_MAX / 2 - 1)
+		parallel = SIZE_MAX / 2 - 1;
 	loaders = malloc(parallel * sizeof(*loaders));
 	for (opt = 0; opt < parallel; ++opt) {
 		int err = pthread_create(loaders + opt, NULL, loader, NULL);
@@ -1089,7 +1091,7 @@ int main(int argc, char *argv[])
 	for (gf = files.head; gf; gf = gf->next)
 		points_cnt += gf->gpx->points_cnt;
 	duration = timespec_sub(end, start);
-	fprintf(stderr, "%d files, %d points, -j%d, %ld.%09ld sec\n",
+	fprintf(stderr, "%d files, %d points, -j%zu, %ld.%09ld sec\n",
 		files_cnt, points_cnt, parallel,
 	       duration.tv_sec, duration.tv_nsec);
 	if (verbose > 3)
