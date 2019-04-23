@@ -67,6 +67,8 @@ static int set_speed = INT_MIN;
 #define TILE_W (256)
 #define TILE_H (256)
 
+static int fixclr = 0; /* used if set_speed == INT_MAX */
+
 static const struct { int kph, clr; } spdclr[] = {
 	{ 0, gdTrueColor(0x00, 0x00, 0x7f) },
 	{10, gdTrueColor(0xcf, 0x00, 0x00) }, // darkred
@@ -620,9 +622,18 @@ static void draw_track_points(struct gpx_point *points, int z, unsigned flags)
 
 			if (!(flags & DRAW_TRKPTR_BADSRC) && (pt->flags & GPX_PT_SPEED))
 				speed = speed_kph_to_clridx(pt->speed * 3.6);
-			if (set_speed != INT_MIN)
+			switch (set_speed) {
+			case INT_MIN:
+				color = spdclr[speed].clr;
+				break;
+			case INT_MAX:
+				color = fixclr;
+				break;
+			default:
 				speed = speed_kph_to_clridx((double)set_speed);
-			color = spdclr[speed].clr;
+				color = spdclr[speed].clr;
+				break;
+			}
 			gdImageSetPixel(tile->img, pix.x, pix.y, color);
 		}
 
@@ -866,6 +877,7 @@ static void usage(const char *argv0)
 		"     bit2 - draws the speed in tile\n"
 		"  -t <zoom>:<line-thickness>[+] set thickness for lines at the level\n"
 		"     extends till the last zoom level if ends with a \"+\", i.e. -t 12:3+\n"
+		"  -c <hex-color> draw all lines with the specified color\n"
 		"  -S <kph> assume the speed to be always <kph>\n"
 		"  -p <diameter> diameter (in px) for <wpt> circles\n"
 		"  -h gives this message\n",
@@ -886,7 +898,7 @@ int main(int argc, char *argv[])
 	pthread_t *loaders;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:p:P:")) != -1)
+	while ((opt = getopt(argc, argv, "0z:Z:C:j:vT:Id:L:Hht:S:p:P:c:")) != -1)
 		switch (opt)  {
 		case '0':
 			stdin_files = 1;
@@ -924,6 +936,12 @@ int main(int argc, char *argv[])
 						z_thickness[z] = t;
 				}
 			}
+		case 'c':
+			fixclr = strtol(optarg, &p, 16);
+			fixclr = gdTrueColor((fixclr >> 16) & 0xff,
+					     (fixclr >> 8) & 0xff,
+					     fixclr & 0xff);
+			set_speed = INT_MAX;
 			break;
 		case 'T':
 			z_max_tiles = strtol(optarg, NULL, 0);
