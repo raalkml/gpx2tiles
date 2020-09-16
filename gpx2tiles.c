@@ -788,7 +788,8 @@ static void remove_tiles(int z)
 struct load
 {
 	struct load *next;
-	const char *path;
+	char *path;
+	size_t path_size;
 	struct gpx_file *gf;
 };
 
@@ -1028,49 +1029,64 @@ int main(int argc, char *argv[])
 	}
 	if (stdin_files) {
 		char buf[BUFSIZ];
-		ssize_t rd = sizeof(buf), off = 0;
-		size_t len, pos;
+		ssize_t off = 0;
 
-		while ((rd = read(STDIN_FILENO, buf + off, rd)) > 0) {
-			for (pos = 0;;) {
-				len = strnlen(buf + pos, rd - pos);
-				if (pos + len < off + rd) {
-					pthread_mutex_lock(&load_q_lock);
-					if (load_free.head)
-						lq = slist_stack_pop(&load_free);
-					else
-						lq = malloc(sizeof(*lq));
-					lq->path = buf + pos;
-					lq->next = NULL;
-					lq->gf = calloc(1, sizeof(*lq->gf));
-					++files_cnt;
-					slist_append(&files, lq->gf);
-					slist_append(&load_q, lq);
-					pthread_cond_broadcast(&load_q_cond);
-					pthread_mutex_unlock(&load_q_lock);
-					pos += len + 1;
-				} else {
-					if (len == rd) {
-						fprintf(stderr, "%s: NUL terminator expected\n",
-							argv[0]);
-						exit(1);
-					}
-					len = rd + off - pos;
-					if (len)
-						memmove(buf, buf + pos, len);
-					off = len;
-					rd = sizeof(buf) - 1 - off;
-					break;
-				}
+		while (!feof(stdin)) {
+			int c = fgetc(stdin);
+			if (off == sizeof(buf)) {
+				fprintf(stderr, "%s: file name too long:\n%.*s\n",
+					argv[0], (int)sizeof(buf), buf);
+				exit(1);
 			}
-			while (1) {
-				int done;
+			buf[off++] = c;
+			if (c == EOF || c == '\0') {
+				if (off == 1) {
+					if (c == '\0')
+						fprintf(stderr, "%s: empty file name\n",
+							argv[0]);
+					continue;
+				}
+				if (verbose > 0)
+					fprintf(stderr, "\t% 4d %.*s\n",
+						files_cnt, (int)off - 1, buf);
 				pthread_mutex_lock(&load_q_lock);
-				done = slist_empty(&load_q);
+				if (load_free.head) {
+					lq = slist_stack_pop(&load_free);
+					if (lq->path_size < off) {
+						lq->path = realloc(lq->path, off);
+						lq->path_size = off;
+					}
+				} else {
+					lq = malloc(sizeof(*lq));
+					lq->path = malloc(off);
+					lq->path_size = off;
+				}
+				memcpy(lq->path, buf, off - 1);
+				lq->path[off - 1] = '\0';
+				off = 0;
+				lq->next = NULL;
+				lq->gf = calloc(1, sizeof(*lq->gf));
+				slist_append(&files, lq->gf);
+				slist_append(&load_q, lq);
+				++files_cnt;
+				pthread_cond_broadcast(&load_q_cond);
 				pthread_mutex_unlock(&load_q_lock);
-				if (done)
-					break;
-				usleep(100);
+				/*
+				 * Wait for load queue to be processed to
+				 * avoid taking too much memory by the file
+				 * names.
+				 */
+				if (files_cnt && (files_cnt % 100) == 0) {
+					while (1) {
+						int done;
+						pthread_mutex_lock(&load_q_lock);
+						done = slist_empty(&load_q);
+						pthread_mutex_unlock(&load_q_lock);
+						if (done)
+							break;
+						usleep(100);
+					}
+				}
 			}
 		}
 	}
