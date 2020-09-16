@@ -820,10 +820,10 @@ static void *loader(void *arg)
 		pthread_mutex_unlock(&load_q_lock);
 		if (!lq)
 			continue;
-		if (verbose > 1)
+		if (verbose > 0)
 			fprintf(stderr, "%ld: %s open\n", (long)pthread_self(), lq->path);
 		lq->gf->gpx = gpx_read_file(lq->path);
-		if (verbose > 1)
+		if (verbose > 0)
 			fprintf(stderr, "%ld: %s loaded\n", (long)pthread_self(), lq->path);
 	}
 }
