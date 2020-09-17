@@ -1099,8 +1099,11 @@ int main(int argc, char *argv[])
 	for (opt = 0; opt < parallel; ++opt)
 		pthread_join(loaders[opt], NULL);
 	clock_gettime(CLOCK_MONOTONIC, &end);
-	while (load_free.head)
-		free(slist_stack_pop(&load_free));
+	while (load_free.head) {
+		lq = slist_stack_pop(&load_free);
+		free(lq->path);
+		free(lq);
+	}
 	free(slist_pop(&load_q));
 	free(loaders);
 	points_cnt = 0;
