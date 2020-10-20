@@ -1,3 +1,4 @@
+#include <stdint.h>
 #define _GNU_SOURCE
 #include <unistd.h>
 #include <fcntl.h>
@@ -397,16 +398,19 @@ static void free_zoom_level(int z)
 #define XY(_x, _y) (struct xy){.x = _x, .y = _y}
 
 /*
- * This seems to a well known test for line segments intersection
+ * This seems to be a well known test for line segments intersection
  * http://stackoverflow.com/a/16725715
  */
 static int turn(struct xy p1, struct xy p2, struct xy p3)
 {
-	int a = p1.x; int b = p1.y;
-	int c = p2.x; int d = p2.y;
-	int e = p3.x; int f = p3.y;
-	int A = (f - b) * (c - a);
-	int B = (d - b) * (e - a);
+	int64_t a = p1.x;
+	int64_t b = p1.y;
+	int64_t c = p2.x;
+	int64_t d = p2.y;
+	int64_t e = p3.x;
+	int64_t f = p3.y;
+	int64_t A = (f - b) * (c - a);
+	int64_t B = (d - b) * (e - a);
 	return A > B ? 1 : A < B ? -1 : 0;
 }
 
