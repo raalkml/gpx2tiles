@@ -1,5 +1,3 @@
-#define _XOPEN_SOURCE
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
