@@ -1007,7 +1007,9 @@ int main(int argc, char *argv[])
 	for (; optind < argc; ++optind) {
 		lq = malloc(sizeof(*lq));
 		lq->next = NULL;
-		lq->path = argv[optind];
+		lq->path_size = strlen(argv[optind]) + 1;
+		lq->path = malloc(lq->path_size);
+		memcpy(lq->path, argv[optind], lq->path_size);
 		lq->gf = calloc(1, sizeof(*lq->gf));
 		lq->gf->next = NULL;
 		lq->gf->gpx = NULL;
