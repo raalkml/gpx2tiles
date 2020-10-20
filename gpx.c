@@ -11,16 +11,15 @@
 #define countof(a) (sizeof(a) / sizeof((a)[0]))
 #define ASCII (char *)
 
-static inline size_t strlcpy(char* tgt, const char* src, size_t size)
+static inline void xmlCharCopy(char *tgt, size_t tgtsize, const xmlChar *src)
 {
-	size_t r = strlen(src);
-	if ( size )
-	{
-		size_t l = size > r ? r: size - 1;
+	size_t r = strlen(ASCII src);
+
+	if (tgtsize) {
+		size_t l = tgtsize > r ? r: tgtsize - 1;
 		memcpy(tgt, src, l);
 		tgt[l] = '\0';
 	}
-	return r;
 }
 
 const char GPX_SRC_GPS[] = "gps";
@@ -194,7 +193,7 @@ static struct segtab_entry *parse_trkpt(xmlNode *xpt, struct gpx_point *pt, stru
 		if (xmlStrcasecmp(xpt->name, BAD_CAST "time") == 0) {
 			pt->flags |= GPX_PT_TIME;
 			s = xmlNodeGetContent(xpt);
-			strlcpy(pt->time, ASCII s, sizeof(pt->time));
+			xmlCharCopy(pt->time, sizeof(pt->time), s);
 			goto frees;
 		} else if (xmlStrcasecmp(xpt->name, BAD_CAST "src") == 0) {
 			s = xmlNodeGetContent(xpt);
@@ -472,7 +471,7 @@ struct gpx_data *gpx_read_file(const char *path)
 
 		if (xmlStrcasecmp(xe->name, BAD_CAST "time") == 0) {
 			xmlChar *s = xmlNodeGetContent(xe);
-			strlcpy(gpx->time, ASCII s, sizeof(gpx->time));
+			xmlCharCopy(gpx->time, sizeof(gpx->time), s);
 			xmlFree(s);
 			continue;
 		}
