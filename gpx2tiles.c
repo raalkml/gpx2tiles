@@ -396,10 +396,20 @@ static void free_zoom_level(int z)
 	struct zoom_level *zl = zoom_levels + z;
 	unsigned int h;
 
+	if (verbose > 1)
+		printf("tile counts at zoom %d: %u\n", z, zoom_levels[z].tile_cnt);
 	zl->tile_cnt = 0;
-	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h)
-		while (zl->tiles[h].head)
+	for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
+		int hl = 0;
+		while (zl->tiles[h].head) {
 			free_tile(slist_stack_pop(&zl->tiles[h]));
+			++hl;
+		}
+		if (verbose > 1)
+			printf(" %d", hl);
+	}
+	if (verbose > 1)
+		printf("\n");
 }
 
 #define XY(_x, _y) (struct xy){.x = _x, .y = _y}
