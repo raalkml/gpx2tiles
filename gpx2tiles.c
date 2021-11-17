@@ -471,15 +471,11 @@ static int speed_kph_to_clridx(double kph)
 {
 	int speed;
 
-	if (signbit(kph)) /* is negative */
-		speed = 0;
 	// TODO: for more speed levels switch to binary search
 	for (speed = 0; speed < (int)countof(spdclr); ++speed)
 		if ((int)kph <= spdclr[speed].kph)
-			break;
-	if (speed >= countof(spdclr))
-		speed = countof(spdclr) - 1;
-	return speed;
+			return speed;
+	return countof(spdclr) - 1;
 }
 
 static void diag_draw_tile_speed(struct tile *tile, const struct gpx_point *pt,
