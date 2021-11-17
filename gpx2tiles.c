@@ -880,7 +880,7 @@ static void usage(const char *argv0)
 		"  -C <output-dir> directory to save the tiles to\n"
 		"  -I delete zoom directories before saving the tiles\n"
 		"  -T <max-tiles> max number of tiles to keep in memory\n"
-		"  -j <jobs> number of tracks to load in parallel\n"
+		"  -j <jobs> number of processing threads\n"
 		"  -L <line-zoom> zoom level above which stop drawing lines (only dots) (default %d)\n"
 		"  -P <line-zoom> zoom level above which stop drawing waypoints (default %d)\n"
 		"  -H heatmap mode\n"
