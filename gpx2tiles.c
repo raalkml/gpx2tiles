@@ -202,9 +202,17 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 
 	if (zoom < zoom_min || zoom > zoom_max)
 		return NULL;
-	slist_for_each(tile, &zoom_levels[zoom].tiles[hash_xy(xy)])
+	unsigned h = hash_xy(xy);
+	struct tile **prev = &zoom_levels[zoom].tiles[h].head;
+	slist_for_each(tile, &zoom_levels[zoom].tiles[h]) {
 		if (tile->xy.x == xy->x && tile->xy.y == xy->y)
 			break;
+		prev = &tile->next;
+	}
+	if (tile) {
+		*prev = tile->next;
+		zoom_levels[zoom].tiles[h].head = tile;
+	}
 	return tile;
 }
 
