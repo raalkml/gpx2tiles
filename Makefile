@@ -41,7 +41,8 @@ clean:
 distclean: clean depclean
 
 install:
-	install -m 0755 $(target)
+	install -d $(DESTDIR)$(PREFIX)/usr/bin/
+	install -m 0755 $(target) $(DESTDIR)$(PREFIX)/usr/bin/
 
 tags:
 	ctags $(srcs) *.h
