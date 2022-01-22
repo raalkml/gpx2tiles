@@ -10,10 +10,10 @@ LIBGD_CFLAGS := $(shell pkg-config --cflags gdlib)
 LIBGD_LIBS := $(shell pkg-config --libs gdlib)
 
 CC := gcc
-CFLAGS := -Wall -ggdb -O3
-CPPFLAGS :=
-LDFLAGS := -Wall -ggdb -O3
-LDLIBS :=
+CFLAGS := $(CFLAGS) -Wall -ggdb -O3
+CPPFLAGS := $(CPPFLAGS)
+LDFLAGS := $(LDFLAGS) -Wall -ggdb -O3
+LDLIBS := $(LDLIBS)
 PKG_CFLAGS = $(LIBGD_CFLAGS) $(LIBXML_CFLAGS)
 PKG_LIBS = $(LIBGD_LIBS) $(LIBXML_LIBS)
 
