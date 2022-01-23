@@ -1,0 +1,17 @@
+Source: gpx2tiles
+Section: admin
+Priority: optional
+Maintainer: Alex Riesen <raa.lkml+github@gmail.com>
+Standards-Version: 4.5.0
+Build-Depends: debhelper (>= 10.4~),
+	       pkg-config,
+	       libxml2-dev (>=2.9.0),
+	       libgd-dev (>= 2.3.0)
+
+Package: gpx2tiles
+Depends: ${shlibs:Depends}, libgd (>= 2.3.0), libxml2 (>=2.9.0)
+Architecture: linux-any
+Description: a simplistic renderer for GPX files into PNG tiles.
+ It is absolutely not ready for any kind of serious use,
+ with a slow rendering, aliased lines and no smoothing of angles.
+

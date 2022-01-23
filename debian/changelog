@@ -1,0 +1,6 @@
+gpx2tiles (1.0) unstable; urgency=low
+
+    * Not a release, only to make a Debian package
+
+ -- Alex Riesen <raa.lkml+github@gmail.com>  Sun, 23 Jan 2022 19:03:00 +0100
+
