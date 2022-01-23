@@ -11,26 +11,28 @@ LIBGD_LIBS := $(shell pkg-config --libs gdlib)
 
 PREFIX ?= /usr
 CC := gcc
-CFLAGS := -Wall -ggdb -O3
-CPPFLAGS :=
-LDFLAGS := -Wall -ggdb -O3
-LDLIBS :=
+# CFLAGS :=
+# CPPFLAGS :=
+# LDFLAGS :=
+# LDLIBS :=
 PKG_CFLAGS = $(LIBGD_CFLAGS) $(LIBXML_CFLAGS)
 PKG_LIBS = $(LIBGD_LIBS) $(LIBXML_LIBS)
 
-local_cflags :=
-local_cppflags := -D_GNU_SOURCE
-local_ldflags :=
-local_ldlibs := -lm -lpthread
+_cflags := -Wall -ggdb -O3
+_cppflags := -D_GNU_SOURCE
+_ldflags := -Wall -ggdb -O3
+_ldlibs := -lm -lpthread
 
 build: $(target)
 
+$(target): link_libs := $(LOADLIBES) $(PKG_LIBS) $(_ldlibs) $(LDLIBS)
+$(target): link_flags := $(_ldflags) $(LDFLAGS) $(TARGET_ARCH)
 $(target): $(ofiles)
-	$(LINK.o) $^ $(LOADLIBES) $(PKG_LIBS) $(LDLIBS) $(local_ldflags) $(local_ldlibs) -o $@
+	$(CC) $(link_flags) $^ $(link_libs) $(OUTPUT_OPTION)
 
 $(odir)/%.o: %.c
 	@mkdir -p '$(odir)'
-	$(COMPILE.c) $(OUTPUT_OPTION) $(PKG_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(local_cppflags) $(local_cflags) $<
+	$(CC) -c $(_cflags) $(_cppflags) $(PKG_CFLAGS) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) $< $(OUTPUT_OPTION)
 
 rebuild: clean
 	$(MAKE) build
@@ -50,7 +52,7 @@ tags:
 
 $(odir)/%.d: %.c
 	@mkdir -p '$(odir)'
-	$(CC) -MM -o $@ $< $(CPPFLAGS) $(local_cppflags)
+	$(CC) -MM -o $@ $< $(_cppflags) $(CPPFLAGS)
 
 .PHONY: tags build rebuild depclean clean distclean install
 
