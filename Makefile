@@ -9,6 +9,7 @@ LIBXML_LIBS := $(shell pkg-config --libs libxml-2.0)
 LIBGD_CFLAGS := $(shell pkg-config --cflags gdlib)
 LIBGD_LIBS := $(shell pkg-config --libs gdlib)
 
+PREFIX ?= /usr
 CC := gcc
 CFLAGS := -Wall -ggdb -O3
 CPPFLAGS :=
@@ -41,8 +42,8 @@ clean:
 distclean: clean depclean
 
 install:
-	install -d $(DESTDIR)$(PREFIX)/usr/bin/
-	install -m 0755 $(target) $(DESTDIR)$(PREFIX)/usr/bin/
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 $(target) $(DESTDIR)$(PREFIX)/bin
 
 tags:
 	ctags $(srcs) *.h
