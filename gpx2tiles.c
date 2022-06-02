@@ -205,13 +205,13 @@ static struct tile *find_tile(const struct xy *xy, int zoom)
 	unsigned h = hash_xy(xy);
 	struct tile **prev = &zoom_levels[zoom].tiles[h].head;
 	slist_for_each(tile, &zoom_levels[zoom].tiles[h]) {
-		if (tile->xy.x == xy->x && tile->xy.y == xy->y)
+		if (tile->xy.x == xy->x && tile->xy.y == xy->y) {
+			*prev = tile->next;
+			tile->next = zoom_levels[zoom].tiles[h].head;
+			zoom_levels[zoom].tiles[h].head = tile;
 			break;
+		}
 		prev = &tile->next;
-	}
-	if (tile) {
-		*prev = tile->next;
-		zoom_levels[zoom].tiles[h].head = tile;
 	}
 	return tile;
 }
