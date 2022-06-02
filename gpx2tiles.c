@@ -361,7 +361,7 @@ static void close_tile(struct tile *tile, int z)
 		int flushed = 0;
 
 		for (h = 0; h < ZOOM_TILE_HASH_SIZE; ++h) {
-			struct tile *tile, *last = NULL;
+			struct tile *last = NULL;
 
 			slist_for_each(tile, &zoom_levels[z].tiles[h])
 				if (tile->img && tile->refcnt == 0)
